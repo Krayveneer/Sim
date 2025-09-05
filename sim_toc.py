@@ -28,17 +28,25 @@ def simulate_writing(initial_hunts, initial_words, trap_power, trap_luck, word_m
         hunts_done += 1
         hunts_remaining -= 1
 
-        # Attraction check
-        if random.random() <= 0.6:
+        # Determine mouse pool based on total words
+        if total_words < 4000:
+            # Only BG can appear
             catch_prob = catch_bg
             words = 250
             bonus_hunts = 0
             mw = 0
         else:
-            catch_prob = catch_mw
-            words = 1000
-            bonus_hunts = 2
-            mw = 1
+            # BG or MW can appear
+            if random.random() <= 0.6:
+                catch_prob = catch_bg
+                words = 250
+                bonus_hunts = 0
+                mw = 0
+            else:
+                catch_prob = catch_mw
+                words = 1000
+                bonus_hunts = 2
+                mw = 1
 
         # Catch check
         if random.random() <= catch_prob:
