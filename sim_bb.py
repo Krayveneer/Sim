@@ -193,7 +193,7 @@ def simulate_dungeon(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
     # Initialize results dictionary
     results = {
         "hunts": [], "lbean": [], "mbean": [], "mysts": [], "ferts": [],
-        "other": [], "royal": [], "noise": [], "harps": []
+        "other": [], "royal": [], "noise": [], "harps_spent": []
     }
 
     # Initialize cheese multiplier dictionary
@@ -206,7 +206,7 @@ def simulate_dungeon(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
     has_target = target_loot in room_types if target_loot else False
 
     for _ in range(n_runs):
-        hunts = lbean = mbean = mysts = ferts = other = royal = noise = harps_spent = 0
+        hunts = lbean = mbean = mysts = ferts = other = royal = noise = noise_raise = harps_spent = 0
         boss_caught = False
 
         if not has_target:
@@ -300,6 +300,7 @@ def simulate_dungeon(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
 
                 # Remove noise after every room
                 harps_spent += noise
+                noise_raise += noise
                 noise = 0
 
                 # If Ultimate Target room, switch to royal cheese and CC
@@ -350,8 +351,8 @@ def simulate_dungeon(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
         results["ferts"].append(ferts)
         results["other"].append(other)
         results["royal"].append(royal)
-        results["noise"].append(noise)
-        results["harps"].append(harps_spent)
+        results["noise"].append(noise_raise)
+        results["harps_spent"].append(harps_spent)
 
     return (
         np.mean(results["hunts"]), np.std(results["hunts"]), results["hunts"],
@@ -362,7 +363,7 @@ def simulate_dungeon(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
         np.mean(results["other"]), np.std(results["other"]), results["other"],
         np.mean(results["royal"]), np.std(results["royal"]), results["royal"],
         np.mean(results["noise"]), np.std(results["noise"]), results["noise"],
-        np.mean(results["harps"]), np.std(results["harps"]), results["harps"]
+        np.mean(results["harps_spent"]), np.std(results["harps_spent"]), results["harps_spent"]
     )
 
 # Simulator for Ballroom
@@ -387,7 +388,7 @@ def simulate_ballroom(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
 
     for _ in range(n_runs):
         # Initialize counters
-        hunts = rbean = harps = mysts = ferts = other = royal = noise = harps_spent = 0
+        hunts = rbean = harps = mysts = ferts = other = royal = noise = noise_raise = harps_spent = 0
         boss_caught = False
 
         if not has_target:
@@ -474,6 +475,7 @@ def simulate_ballroom(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
                 
                 # Remove noise after every room
                 harps_spent += noise
+                noise_raise += noise
                 noise = 0
 
                 # If Ultimate Target room, switch to royal cheese and CC
@@ -522,7 +524,7 @@ def simulate_ballroom(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
         results["ferts"].append(ferts)
         results["other"].append(other)
         results["royal"].append(royal)
-        results["noise"].append(noise)
+        results["noise"].append(noise_raise)
         results["harps_spent"].append(harps_spent)
 
     return (
@@ -545,7 +547,7 @@ def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
     # Initialize results dictionary
     results = {
         "hunts": [], "geggs": [], "ferts": [], "other": [], "royal": [],
-        "noise": [], "harps": []}
+        "noise": [], "harps_spent": []}
 
     # Initialize cheese multiplier dictionary
     cheese_multiplier = {"SB": 1, "Beanster": 2, "Lavish": 4, "Royal": 16}
@@ -556,7 +558,7 @@ def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
     room_multi = {"Super": 2, "Extreme": 4, "Ultimate": 8}
 
     for _ in range(n_runs):
-        hunts = geggs = ferts = other = royal = noise = harps_spent = 0
+        hunts = geggs = ferts = other = royal = noise = noise_raise = harps_spent = 0
         boss_caught = False
 
         # Loop until boss caught (i.e. ultimate room found and completed)
@@ -565,10 +567,8 @@ def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
             denom = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
             room_multiplier = room_multi[denom]
 
-            # Cheese always Royal in Ultimate, otherwise Leaping Lavish
-            active_cheese = "Royal" if denom == "Ultimate" else "Lavish"
             # A factor of 4 from feather and gold quill (always used in Great Hall)
-            loot_multi = 4 * cheese_multiplier[active_cheese] * room_multiplier
+            loot_multi = 4 * cheese_multiplier["Lavish"] * room_multiplier
 
             # 4 hunts with lavish
             for _ in range(4):
@@ -582,11 +582,20 @@ def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
             # Remove noise after every room except Ultimate
             if denom != "Ultimate":
                 harps_spent += noise
+                noise_raise += noise
                 noise = 0
 
-            # If Ultimate room, do 20 hunts with royal cheese, then boss
+            # If Ultimate room, do 20 hunts with royal cheese, 20 hunts of chase, then boss
             if denom == "Ultimate":
                 # A factor of 8 from CC, feather and gold quill
+                loot_multi = 8 * cheese_multiplier["Royal"] * room_multiplier
+                for _ in range(20):
+                    hunts += 1
+                    royal += 1
+                    m_pow, m_eff, _ = mice.get_mouse("Royal", "Great Hall")
+                    if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
+                        geggs += loot_multi
+                # Giant chase: another 20 hunts with royal cheese
                 loot_multi_ultimate = loot_multi * 2
                 for _ in range(20):
                     hunts += 1
@@ -614,8 +623,8 @@ def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
         results["ferts"].append(ferts)
         results["other"].append(other)
         results["royal"].append(royal)
-        results["noise"].append(noise)
-        results["harps"].append(harps_spent)
+        results["noise"].append(noise_raise)
+        results["harps_spent"].append(harps_spent)
 
     return (
         np.mean(results["hunts"]), np.std(results["hunts"]), results["hunts"],
@@ -624,20 +633,14 @@ def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
         np.mean(results["other"]), np.std(results["other"]), results["other"],
         np.mean(results["royal"]), np.std(results["royal"]), results["royal"],
         np.mean(results["noise"]), np.std(results["noise"]), results["noise"],
-        np.mean(results["harps"]), np.std(results["harps"]), results["harps"]
+        np.mean(results["harps_spent"]), np.std(results["harps_spent"]), results["harps_spent"]
     )
 
 # Plan a chain of stages
 def plan_chain(inventory, trap_power, trap_luck, use_ref, goal, n_runs=1000):
     # Stage fertilizer costs
     stage_cost = {"Beanstalk": 0, "Dungeon": 1, "Ballroom": 12, "Great Hall": 100}
-    # Fertilizer gain per stage
-    fert_gain = {
-        "Beanstalk": 2 if use_ref else 1,
-        "Dungeon": 10 if use_ref else 5,
-        "Ballroom": 40 if use_ref else 20,
-        "Great Hall": 20 if use_ref else 10}
-
+    
     # Initialize tracking variables
     chain = []
     total_hunts = 0
@@ -707,20 +710,50 @@ def plan_chain(inventory, trap_power, trap_luck, use_ref, goal, n_runs=1000):
     def run_greathall():
         nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_other, noise_summary, harps_summary
         res = simulate_greathall(trap_power, trap_luck, use_ref, n_runs)
-        (mean_h, _, _, mean_eggs, _, _, mean_ferts, _, _, mean_other, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps, _, _) = res
+        (mean_h, _, _, mean_eggs, _, _, mean_ferts, _, _, mean_other, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
         total_hunts += mean_h
         hunts_with_royal += mean_royal
         hunts_with_other += mean_other
         noise_summary += mean_noise
-        harps_summary += mean_harps
+        harps_summary += mean_harps_spent
         loot_summary["golden_eggs"] += mean_eggs
         loot_summary["fertilizers"] += mean_ferts
         fert_have += mean_ferts
         chain.append("Great Hall")
-        loot_summary["golden_harps"] -= mean_harps
+        loot_summary["golden_harps"] -= mean_harps_spent
+
+    def run_harp_farm():
+        nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_other, noise_summary, harps_summary
+        res = simulate_ballroom(trap_power, trap_luck, use_ref, "harps", n_runs)
+        (mean_h, _, _, mean_rbean, _, _, mean_harps, _, _, mean_mysts, _, _, mean_ferts, _, _, mean_other, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
+        total_hunts += mean_h
+        hunts_with_royal += mean_royal
+        hunts_with_other += mean_other
+        noise_summary += mean_noise
+        harps_summary += mean_harps_spent
+        loot_summary["royal_beans"] += mean_rbean
+        loot_summary["golden_harps"] += mean_harps
+        loot_summary["mysts"] += mean_mysts
+        loot_summary["fertilizers"] += mean_ferts
+        fert_have += mean_ferts
+        chain.append("Ballroom (harp farm)")
+        loot_summary["golden_harps"] -= mean_harps_spent
         
     # Main loop: farm fertilizer until enough for Great Hall, then run Great Hall for eggs
     while loot_summary["golden_eggs"] < goal:
+        # If harps are low, farm harps first
+        while loot_summary["golden_harps"] < 5000:
+            # Check if enough fertilizer for Ballroom
+            if fert_have < stage_cost["Ballroom"]:
+                # Farm fertilizer first
+                while fert_have < stage_cost["Dungeon"]:
+                    run_beanstalk()
+                fert_have -= stage_cost["Dungeon"]
+                loot_summary["fertilizers"] -= stage_cost["Dungeon"]
+                run_dungeon()
+            fert_have -= stage_cost["Ballroom"]
+            loot_summary["fertilizers"] -= stage_cost["Ballroom"]
+            run_harp_farm()
         # If not enough fertilizer for Great Hall, farm it
         while fert_have < stage_cost["Great Hall"]:
             # If not enough for Ballroom, farm Dungeon
