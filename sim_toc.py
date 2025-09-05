@@ -1,6 +1,7 @@
 import random
 import math
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Compute Bitter Grammarian Catch Rate
 def cr_bg(trap_power, trap_luck):
@@ -129,3 +130,14 @@ if __name__ == "__main__":
     print(f"Max words observed: {max_word}")
     print(f"Max volumes written: {max_vol}")
     print(f"Max Gnawbel Prize rewarded: {max_gpl}")
+
+    # Plot normalized distribution
+    volumes = [round(w/4000) for w in words_dist]
+    plt.figure(figsize=(10,6))
+    plt.hist(volumes, bins=range(min(volumes), max(volumes)+2), edgecolor='black', alpha=0.7, density=True)
+    plt.title("Distribution of Volumes Written per Run")
+    plt.xlabel("Volumes Written")
+    plt.ylabel("Frequency")
+    plt.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.show()
