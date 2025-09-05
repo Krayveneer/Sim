@@ -538,7 +538,7 @@ def simulate_ballroom(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
     )
 
 # Simulator for Great Hall
-def simulate_greathall(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
+def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
     # Fetch mice data
     mice = MiceData()
 
@@ -628,32 +628,17 @@ def simulate_greathall(trap_power, trap_luck, use_ref, target_loot, n_runs=1000)
     )
 
 # Plan a chain of stages
-# We're stingy and lazy, so no key or ruby removal will be used for this section
-def plan_chain(target_loot, inventory, trap_power, trap_luck, use_ref, use_cc, gquill, feather, cheese, goal, n_runs=1000, harp_threshold=5000):
-    # Fert costs
-    stage_cost = {"Beanstalk":0, "Dungeon":1, "Ballroom":12, "Great Hall":100}
+def plan_chain(inventory, trap_power, trap_luck, use_ref, goal, n_runs=1000):
+    # Stage fertilizer costs
+    stage_cost = {"Beanstalk": 0, "Dungeon": 1, "Ballroom": 12, "Great Hall": 100}
+    # Fertilizer gain per stage
     fert_gain = {
         "Beanstalk": 2 if use_ref else 1,
         "Dungeon": 10 if use_ref else 5,
         "Ballroom": 40 if use_ref else 20,
         "Great Hall": 20 if use_ref else 10}
-    stage_loot = {
-        "beans": "Beanstalk",
-        "lavish": "Dungeon",
-        "magic": "Dungeon",
-        "mysteries": "Dungeon",
-        "royal": "Ballroom",
-        "harps": "Ballroom",
-        "eggs": "Great Hall"}
 
-    # Check loot in what stage
-    t = target_loot.strip().lower()
-    if t not in stage_loot:
-        raise ValueError(f"Unknown loot '{target_loot}'. Valid loot: {list(stage_loot.keys())}")
-    required_stage = stage_loot[t]
-
-    # Inventory
-    fert_have = inventory.get("fertilizers", 0)
+    # Initialize tracking variables
     chain = []
     total_hunts = 0
     hunts_with_royal = 0
@@ -661,30 +646,23 @@ def plan_chain(target_loot, inventory, trap_power, trap_luck, use_ref, use_cc, g
     hunts_with_stalk = 0
     noise_summary = 0
     harps_summary = 0
-
-    # Initiate initial loot
-    loot_key_map = {
-        "beans": "magic_beans",   # beanstalk beans
-        "lavish": "lavish_beans",
-        "magic": "magic_beans",
-        "mysteries": "mysteries",
-        "royal": "royal_beans",
-        "harps": "golden_harps",
-        "eggs": "golden_eggs"}
-    loot_key = loot_key_map[t]
+    # Current loot summary
     loot_summary = {
         "lavish_beans": inventory.get("lavish_beans", 0),
         "magic_beans": inventory.get("magic_beans", 0),
         "royal_beans": inventory.get("royal_beans", 0),
         "golden_harps": inventory.get("golden_harps", 0),
         "golden_eggs": inventory.get("golden_eggs", 0),
-        "mysteries": inventory.get("mysteries", 0),
-        "fertilizers": inventory.get("fertilizers", 0)}
+        "mysts": inventory.get("mysts", 0),
+        "fertilizers": inventory.get("fertilizers", 0)
+    }
 
-    # Function to call for each stage
+    fert_have = loot_summary["fertilizers"]
+
+    # Helper functions for each stage
     def run_beanstalk():
         nonlocal total_hunts, fert_have, hunts_with_stalk
-        mean_h, mean_beans, mean_ferts = simulate_beanstalk(trap_power, trap_luck, use_ref, use_cc, n_runs)
+        mean_h, _, _, mean_beans, _, _, mean_ferts, _, _ = simulate_beanstalk(trap_power, trap_luck, use_ref, n_runs)
         total_hunts += mean_h
         hunts_with_stalk += mean_h
         loot_summary["magic_beans"] += mean_beans
@@ -692,122 +670,74 @@ def plan_chain(target_loot, inventory, trap_power, trap_luck, use_ref, use_cc, g
         fert_have += mean_ferts
         chain.append("Beanstalk")
 
-    def run_dungeon(cheese, target_room=None, tag="Dungeon"):
+    def run_dungeon():
         nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_other, noise_summary, harps_summary
-        res = simulate_dungeon(trap_power, trap_luck, use_ref, use_cc, cheese, t, use_key=0, gquill=gquill, feather=feather, n_runs=n_runs)
-        # unpack
-        mean, std, dist, mean_lbean, std_lbean, dist_lbean, mean_mbean, std_mbean, dist_mbean, mean_mysts, std_mysts, dist_mysts, mean_fert, std_fert, dist_fert, mean_other, std_other, dist_other, mean_royal, std_royal, dist_royal, mean_noise, std_noise, dist_noise, mean_remov, std_remov, dist_remov = res
-        total_hunts += mean
+        res = simulate_dungeon(trap_power, trap_luck, use_ref, None, n_runs)
+        (mean_h, _, _, mean_lbean, _, _, mean_mbean, _, _, mean_mysts, _, _, mean_ferts, _, _, mean_other, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
+        total_hunts += mean_h
         hunts_with_royal += mean_royal
         hunts_with_other += mean_other
         noise_summary += mean_noise
-        harps_summary += mean_remov
+        harps_summary += mean_harps_spent
         loot_summary["lavish_beans"] += mean_lbean
         loot_summary["magic_beans"] += mean_mbean
-        loot_summary["mysteries"] += mean_mysts
-        loot_summary["fertilizers"] += mean_fert
-        fert_have += mean_fert
-        chain.append(f"{tag}({cheese})")
-        loot_summary["golden_harps"] -= mean_remov
-        #if loot_summary["golden_harps"] < 0:
-        #    raise ValueError("Not enough Golden Harps to sustain. Do a Harp run in Ballroom.")
+        loot_summary["mysts"] += mean_mysts
+        loot_summary["fertilizers"] += mean_ferts
+        fert_have += mean_ferts
+        chain.append("Dungeon")
+        loot_summary["golden_harps"] -= mean_harps_spent
 
-    def run_ballroom(cheese, target_room=None, tag="Ballroom"):
+    def run_ballroom():
         nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_other, noise_summary, harps_summary
-        res = simulate_ballroom(trap_power, trap_luck, use_ref, use_cc, cheese, t, use_key=0, ruby_removal=0, gquill=gquill, feather=feather, n_runs=n_runs)
-        mean, std, dist, mean_rbean, std_rbean, dist_rbean, mean_harps, std_harps, dist_harps, mean_mysts, std_mysts, dist_mysts, mean_fert, std_fert, dist_fert, mean_other, std_other, dist_other, mean_royal, std_royal, dist_royal, mean_noise, std_noise, dist_noise, mean_remov, std_remov, dist_remov = res
-        total_hunts += mean
+        res = simulate_ballroom(trap_power, trap_luck, use_ref, None, n_runs)
+        (mean_h, _, _, mean_rbean, _, _, mean_harps, _, _, mean_mysts, _, _, mean_ferts, _, _, mean_other, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
+        total_hunts += mean_h
         hunts_with_royal += mean_royal
         hunts_with_other += mean_other
         noise_summary += mean_noise
-        harps_summary += mean_remov
+        harps_summary += mean_harps_spent
         loot_summary["royal_beans"] += mean_rbean
         loot_summary["golden_harps"] += mean_harps
-        loot_summary["mysteries"] += mean_mysts
-        loot_summary["fertilizers"] += mean_fert
-        fert_have += mean_fert
-        chain.append(f"{tag}({cheese})")
-        loot_summary["golden_harps"] -= mean_remov
-        #if loot_summary["golden_harps"] < 0:
-        #    raise ValueError("Not enough Golden Harps to sustain. Do a Harp run in Ballroom.")
+        loot_summary["mysts"] += mean_mysts
+        loot_summary["fertilizers"] += mean_ferts
+        fert_have += mean_ferts
+        chain.append("Ballroom")
+        loot_summary["golden_harps"] -= mean_harps_spent
 
-    def run_greathall(cheese):
+    def run_greathall():
         nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_other, noise_summary, harps_summary
-        res = simulate_greathall(trap_power, trap_luck, use_ref, use_cc, cheese, use_key=1, gquill=1, feather=1, n_runs=n_runs)
-        mean, std, dist, mean_eggs, std_eggs, dist_eggs, mean_fert, std_fert, dist_fert, mean_other, std_other, dist_other, mean_royal, std_royal, dist_royal, mean_noise, std_noise, dist_noise, mean_remov, std_remov, dist_remov = res
-        total_hunts += mean
+        res = simulate_greathall(trap_power, trap_luck, use_ref, n_runs)
+        (mean_h, _, _, mean_eggs, _, _, mean_ferts, _, _, mean_other, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps, _, _) = res
+        total_hunts += mean_h
         hunts_with_royal += mean_royal
         hunts_with_other += mean_other
         noise_summary += mean_noise
-        harps_summary += mean_remov
+        harps_summary += mean_harps
         loot_summary["golden_eggs"] += mean_eggs
-        loot_summary["fertilizers"] += mean_fert
-        fert_have += mean_fert
-        chain.append(f"Great Hall({cheese})")
-        loot_summary["golden_harps"] -= mean_remov
-        if loot_summary["golden_harps"] < 0:
-            raise ValueError("Not enough Golden Harps to sustain. Do a Harp run in Ballroom.")
-
-    # Start planning
-    # Do beanstalk if no fert
-    if fert_have <= 0:
-        run_beanstalk()
-
-    while loot_summary[loot_key] < goal:
-        # Harp check
-        if loot_summary["golden_harps"] < harp_threshold:
-            # Do Ballroom 
-            while fert_have < stage_cost["Ballroom"]:
-                if fert_have < stage_cost["Dungeon"]:
-                    run_beanstalk()
-                fert_have -= stage_cost["Dungeon"]
-                run_dungeon(cheese)
-            fert_have -= stage_cost["Ballroom"]
-            run_ballroom(cheese, target_room="harps", tag="Ballroom(Harp run)")
+        loot_summary["fertilizers"] += mean_ferts
+        fert_have += mean_ferts
+        chain.append("Great Hall")
+        loot_summary["golden_harps"] -= mean_harps
         
-        if required_stage == "Dungeon":
-            # Dungeon costs 1 fert
-            while fert_have < stage_cost["Dungeon"]:
-                run_beanstalk()
-            fert_have -= stage_cost["Dungeon"]
-            loot_summary["fertilizers"] -= stage_cost["Dungeon"]
-            run_dungeon(cheese, t)
-
-        elif required_stage == "Ballroom":
-            # Ballroom costs 12 fert
+    # Main loop: farm fertilizer until enough for Great Hall, then run Great Hall for eggs
+    while loot_summary["golden_eggs"] < goal:
+        # If not enough fertilizer for Great Hall, farm it
+        while fert_have < stage_cost["Great Hall"]:
+            # If not enough for Ballroom, farm Dungeon
             while fert_have < stage_cost["Ballroom"]:
-                # Check if we need beanstalk run
-                if fert_have < stage_cost["Dungeon"]:
+                # If not enough for Dungeon, farm Beanstalk
+                while fert_have < stage_cost["Dungeon"]:
                     run_beanstalk()
-                # Then run dungeon
                 fert_have -= stage_cost["Dungeon"]
                 loot_summary["fertilizers"] -= stage_cost["Dungeon"]
-                run_dungeon(cheese)
+                run_dungeon()
             fert_have -= stage_cost["Ballroom"]
             loot_summary["fertilizers"] -= stage_cost["Ballroom"]
-            run_ballroom(cheese, t)
-
-        elif required_stage == "Great Hall":
-            # Check if you can get into Ballroom or not
-            while fert_have < stage_cost["Ballroom"]:
-                # Check if we need beanstalk run
-                if fert_have < stage_cost["Dungeon"]:
-                    run_beanstalk()
-                # Then run dungeon
-                fert_have -= stage_cost["Dungeon"]
-                loot_summary["fertilizers"] -= stage_cost["Dungeon"]
-                run_dungeon(cheese)
-            # Check if you can get into Great Hall or not
-            while fert_have < stage_cost["Great Hall"]:
-                fert_have -= stage_cost["Ballroom"]
-                loot_summary["fertilizers"] -= stage_cost["Ballroom"]
-                run_ballroom(cheese)
-            fert_have -= stage_cost["Great Hall"]
-            loot_summary["fertilizers"] -= stage_cost["Great Hall"]
-            run_greathall(cheese)
-        # Otherwise, just chill in beanstalk
-        elif required_stage == "Beanstalk":
-            run_beanstalk()
+            run_ballroom()
+        # Now run Great Hall
+        fert_have -= stage_cost["Great Hall"]
+        loot_summary["fertilizers"] -= stage_cost["Great Hall"]
+        run_greathall()
 
     return chain, total_hunts, hunts_with_royal, hunts_with_other, hunts_with_stalk, noise_summary, harps_summary, loot_summary
 
@@ -818,10 +748,7 @@ if __name__ == "__main__":
     print(f"========== Input your setup ==========")
     trap_power = int(input("Enter Trap Power: "))
     trap_luck = int(input("Enter Trap Luck: "))
-    use_cc = int(input("Condensed Creativity? (1=yes, 0=no): "))
     use_ref = int(input("(At least Ruby) Refractor Base? (1=yes, 0=no): "))
-    gquill = int(input("Has Golden Quill? (1=yes, 0=no): "))
-    feather = int(input("Golden Goose Feather? (1=yes, 0=no): "))
     
     # Plan chain mode prereq
     print("\n========== Input your inventory ==========")
@@ -836,31 +763,18 @@ if __name__ == "__main__":
     }
     # Target
     print("========== Input your target ==========")
-    target_loot = input("Target loot (magic/lavish/royal/harps/eggs): ").strip().lower()
     goal = int(input("Number of target loot: "))
-    # Determine cheese
-    cheese_input = input("Cheese type (sb/beanster/(leaping)lavish/royal): ")
-    cheese_map = {
-        "sb": "SB",
-        "beanster": "Beanster",
-        "lavish": "Lavish",
-        "royal": "Royal"
-    }
-    if cheese_input not in cheese_map:
-        raise ValueError("Invalid cheese! Use SB/Beanster/Lavish/Royal")
-    cheese = cheese_map[cheese_input]
     
     # Plan the chain run
     chain, total_hunts, total_royal, total_other, total_sb, total_noise, total_harps, loot_summary = plan_chain(
-        target_loot, inventory, trap_power, trap_luck, use_ref, use_cc, gquill, feather, cheese, goal, n_runs=1000, harp_threshold=5000
-    )
+        inventory, trap_power, trap_luck, use_ref, goal, n_runs=1000)
 
     print("\n========== Plan Run Result ==========")
     print(f"Planned chain: {' -> '.join(chain)}")
     print("========== Plan Run Result ==========")
     print(f"Total average hunts: {total_hunts:.2f}")
     print(f"Average hunts with SB+ (beanstalk): {total_sb:.2f}")
-    print(f"Average hunts with {cheese}: {total_other:.2f}")
+    print(f"Average hunts with Lavish/Beanster: {total_other:.2f}")
     print(f"Average hunts with Royal: {total_royal:.2f}")
     print(f"Average noise raised during the run: {total_noise:.2f}")
     print(f"Average harps required for the run: {total_harps:.2f}")
