@@ -29,7 +29,15 @@ Several assumptions have been made during the writing of this code:
 - Royal Beanster and Condensed Creativity are used in Ultimate Target room
 - Royal Ruby Refractor Base (or its subsequent series) is used to double the Fabled Fertilizer output during the Giant fight
 - Room 1 Retreat strategy is employed for purely Fabled Fertilizer farming
+- Room 1 Retreat strategy utilizes Leaping Lavish Beanster to end the room and Beanster during Giant chase
+- Do Golden Harps farming run when Golden Harps fall below the threshold of 5000
+- Do Lavish Beans farming run when Leaping Lavish Beanster falls below the threshold of 1000
+- Do Royal Beans farming run when Royal Beanster falls below the threshold of 1000
+- Beanster cheese are assumed to have been bought in the marketplace
 
 ## Features
 
-- 
+- Simulates leaping and chase through rooms with custom trap power and trap luck
+- Uses of refractor base can be toggled
+- Plans a chain of castles that needs to be done to reach Golden Goose Eggs target
+- Outputs average for hunts with a given cheese, harps used, and compounded final loot gain
