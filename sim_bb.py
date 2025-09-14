@@ -3,6 +3,8 @@ from typing import Dict, List, Optional
 import numpy as np
 import random
 import math
+import pdb
+import sys
 
 # Mice Data taken from tsitu's CRE
 class MiceData:
@@ -241,14 +243,14 @@ def simulate_beanstalk(trap_power: int, trap_luck: int, use_ref: bool, n_runs: i
 
         # If using refractor base, double ferts
         if use_ref:
-            ferts *= 2
+            run_loot["ferts"] *= 2
 
         # Append results
-        results["hunts"].append(hunts)
-        for keys in run_loot:
-            results.setdefault(keys, []).append(run_loot[keys])
+        results["hunts"].append(run_loot.get("hunts", hunts))
+        for keys, vals in run_loot.items():
+            results.setdefault(keys, []).append(vals)
 
-    return SimResult(results["hunts"], {keys: results[keys] for keys in results.items() if keys != "hunts"})
+    return SimResult(results["hunts"], {keys: results[keys] for keys in results if keys != "hunts"})
 
 # Simulator for Room 1 Retreat
 def simulate_r1r(mice: MiceData, trap_power: int, trap_luck: int, 
@@ -396,22 +398,22 @@ def simulate_dungeon(trap_power: int, trap_luck: int, use_ref: bool, target_loot
         boss_reward = {"mbean": 20, "ferts": 5})
 
     # Simulate run
-    if target_loot is None:
-        # Default to R1R
-        run_loot = simulate_r1r(mice, trap_power, trap_luck, **r1r_params, zone = "Dungeon")
-    else:
-        # Find ultimate target room to farm
-        run_loot = simulate_farm(mice, trap_power, trap_luck, **farm_params, target_loot = target_loot, zone = "Dungeon")
+    for i in range(n_runs):
+        if target_loot is None:
+            # Default to R1R
+            run_loot = simulate_r1r(mice, trap_power, trap_luck, **r1r_params, zone = "Dungeon")
+        else:
+            # Find ultimate target room to farm
+            run_loot = simulate_farm(mice, trap_power, trap_luck, **farm_params, target_loot = target_loot, zone = "Dungeon")
     
-    # Double ferts if using refractor base
-    if use_ref:
-        run_loot["ferts"] *= 2
+        # Double ferts if using refractor base
+        if use_ref:
+            run_loot["ferts"] *= 2
 
-    # Append results
-    results["hunts"].append(run_loot["hunts"])
-    for keys in run_loot:
-        if keys != "hunts":
-            results[keys].append(run_loot[keys])
+        # Append results
+        results["hunts"].append(run_loot.get("hunts"))
+        for keys, vals in run_loot.items():
+            results.setdefault(keys, []).append(vals)
 
     return SimResult(results["hunts"], {keys: results[keys] for keys in results if keys != "hunts"})
 
@@ -453,22 +455,22 @@ def simulate_ballroom(trap_power: int, trap_luck: int, use_ref: bool, target_loo
         boss_reward = {"ferts": 20})
     
     # Simulate runs
-    if target_loot is None:
-        # Default to R1R
-        run_loot = simulate_r1r(mice, trap_power, trap_luck, **r1r_params, zone = "Ballroom")
-    else:
-        # Find ultimate target room to farm
-        run_loot = simulate_farm(mice, trap_power, trap_luck, **farm_params, target_loot = target_loot, zone = "Ballroom")
+    for _ in range(n_runs):
+        if target_loot is None:
+            # Default to R1R
+            run_loot = simulate_r1r(mice, trap_power, trap_luck, **r1r_params, zone = "Ballroom")
+        else:
+            # Find ultimate target room to farm
+            run_loot = simulate_farm(mice, trap_power, trap_luck, **farm_params, target_loot = target_loot, zone = "Ballroom")
     
-    # Double ferts if using refractor base
-    if use_ref:
-        run_loot["ferts"] *= 2
+        # Double ferts if using refractor base
+        if use_ref:
+            run_loot["ferts"] *= 2
 
-    # Append results
-    results["hunts"].append(run_loot["hunts"])
-    for keys in run_loot:
-        if keys != "hunts":
-            results[keys].append(run_loot[keys])
+        # Append results
+        results["hunts"].append(run_loot.get("hunts"))
+        for keys, vals in run_loot.items():
+            results.setdefault(keys, []).append(vals)
 
     return SimResult(results["hunts"], {keys: results[keys] for keys in results if keys != "hunts"})
 
@@ -545,224 +547,173 @@ def simulate_greathall(trap_power: int, trap_luck: int, use_ref: bool, n_runs: i
 
         # Double ferts if using refractor base
         if use_ref:
-            run_loot["fert"] *= 2
+            run_loot["ferts"] *= 2
 
         # Append results
-        results["hunts"].append(hunts)
-        for keys in run_loot:
-            results.setdefault(keys, []).append(run_loot[keys])
+        results["hunts"].append(run_loot.get("hunts", hunts))
+        for keys, vals in run_loot.items():
+            results.setdefault(keys, []).append(vals)
 
     return SimResult(results["hunts"], {keys: results[keys] for keys in results if keys != "hunts"})
 
-
 # Plan a chain of stages
-def plan_chain(inventory, trap_power, trap_luck, use_ref, goal, n_runs=1000):
-    # Stage fertilizer costs
-    stage_cost = {"Beanstalk": 0, "Dungeon": 1, "Ballroom": 12, "Great Hall": 100}
+def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int, inventory: Dict[str, int]) -> List[Dict[str, int]]:
+    # Precompute average runs for each stage
+    beanstalk = simulate_beanstalk(trap_power, trap_luck, use_ref, 1000)
+    r1r_dungeon = simulate_dungeon(trap_power, trap_luck, use_ref, None, 1000)
+    r1r_ballroom = simulate_ballroom(trap_power, trap_luck, use_ref, None, 1000)
+    lbean_farm = simulate_dungeon(trap_power, trap_luck, use_ref, "lavish", 1000)
+    mbean_farm = simulate_dungeon(trap_power, trap_luck, use_ref, "magic", 1000)
+    rbean_farm = simulate_ballroom(trap_power, trap_luck, use_ref, "royal", 1000)
+    harps_farm = simulate_ballroom(trap_power, trap_luck, use_ref, "harps", 1000)
+    run_greathall = simulate_greathall(trap_power, trap_luck, use_ref, 1000)
+
+    # Store precomputed average
+    avg_beanstalk = beanstalk.mean()
+    avg_r1r_dungeon = r1r_dungeon.mean()
+    avg_r1r_ballroom = r1r_ballroom.mean()
+    avg_lbean_farm = lbean_farm.mean()
+    avg_mbean_farm = mbean_farm.mean()
+    avg_rbean_farm = rbean_farm.mean()
+    avg_harps_farm = harps_farm.mean()
+    avg_run_greathall = run_greathall.mean()
+
+    # Print out averages for reference
+    precomp = {
+        "Beanstalk": avg_beanstalk,
+        "Dungeon (R1R)": avg_r1r_dungeon,
+        "Ballroom (R1R)": avg_r1r_ballroom,
+        "Dungeon (Lapis)": avg_lbean_farm,
+        "Dungeon (Magic)": avg_mbean_farm,
+        "Ballroom (Royal)": avg_rbean_farm,
+        "Ballroom (Harps)": avg_harps_farm,
+        "Great Hall": avg_run_greathall}
+
+    print("\n========== Print Average Beanster per Run ==========")
+    print(f"{'Stage':17} | {'royal':5} | {'llavi':5} | {'bster':5} | {'mbean':5} | {'lbean':5} | {'rbean':5} | {'harps':5}")
+    print("---------------------------------------------------------------------------")
+    for stage, loot in precomp.items():
+        royal = int(loot.get("royal", 0))
+        llavi = int(loot.get("llavi", 0))
+        bster = int(loot.get("bster", 0))
+        mbean = int(loot.get("mbean", 0))
+        lbean = int(loot.get("lbean", 0))
+        rbean = int(loot.get("rbean", 0))
+        harps = int(loot.get("harps", 0))
+        print(f"{stage:17} | {royal:<5} | {llavi:<5} | {bster:<5} | {mbean:<5} | {lbean:<5} | {rbean:<5} | {harps:<5}")    
+
+    # Setup initial inventory
+    inv = inventory.copy()
+    egg_count = inv.get("geggs", 0)
+    chain: List[Dict[str, int]] = []
+
+    # Fert costs
+    fert_costs = {"Dungeon": 1, "Ballroom": 12, "Great Hall": 100}
+
+    # Define threshold
+    threshold_harps = 5000
+    threshold_royal = 100
+    threshold_llavi = 100
+
+    # Pre-check for (leaping) lavish and royal beansters 
+    # This is important because then the logic would become a bit more complex without this boundary conditions
+    if inv["llavi"] < threshold_llavi:
+        return [{"error": f"Need at least {threshold_llavi} (leaping) lavish beanster to start the chain."}]
+    if inv["royal"] < threshold_royal:
+        return [{"error": f"Need at least {threshold_royal} royal beanster to start the chain."}]
     
-    # Initialize tracking variables
-    chain = []
-    total_hunts = 0
-    hunts_with_royal = 0
-    hunts_with_lavish = 0
-    hunts_with_beanster = 0
-    hunts_with_stalk = 0
-    noise_summary = 0
-    harps_summary = 0
-    # Current loot summary
-    loot_summary = {
-        "royal_cheese": inventory.get("royal_cheese", 0),
-        "lavish_cheese": inventory.get("lavish_cheese", 0),
-        "lavish_beans": inventory.get("lavish_beans", 0),
-        "magic_beans": inventory.get("magic_beans", 0),
-        "royal_beans": inventory.get("royal_beans", 0),
-        "golden_harps": inventory.get("golden_harps", 0),
-        "golden_eggs": inventory.get("golden_eggs", 0),
-        "mysts": inventory.get("mysts", 0),
-        "fertilizers": inventory.get("fertilizers", 0)
-    }
+    # Loop until target eggs reached
+    while egg_count < target_eggs:
+        stage = None
+        loot = None
+        fert_spent = 0
 
-    fert_have = loot_summary["fertilizers"]
-
-    # Helper functions for each stage
-    def run_beanstalk():
-        nonlocal total_hunts, fert_have, hunts_with_stalk
-        mean_h, _, _, mean_beans, _, _, mean_ferts, _, _ = simulate_beanstalk(trap_power, trap_luck, use_ref, n_runs)
-        total_hunts += mean_h
-        hunts_with_stalk += mean_h
-        loot_summary["magic_beans"] += mean_beans
-        loot_summary["fertilizers"] += mean_ferts
-        fert_have += mean_ferts
-        chain.append("Beanstalk")
-
-    def run_dungeon():
-        nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_lavish, hunts_with_beanster, noise_summary, harps_summary
-        res = simulate_dungeon(trap_power, trap_luck, use_ref, None, n_runs)
-        (mean_h, _, _, mean_lbean, _, _, mean_mbean, _, _, mean_mysts, _, _, mean_ferts, _, _, mean_beanster, _, _, mean_lavish, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
-        total_hunts += mean_h
-        hunts_with_royal += mean_royal
-        hunts_with_lavish += mean_lavish
-        hunts_with_beanster += mean_beanster
-        noise_summary += mean_noise
-        harps_summary += mean_harps_spent
-        loot_summary["lavish_beans"] += mean_lbean
-        loot_summary["magic_beans"] += mean_mbean
-        loot_summary["mysts"] += mean_mysts
-        loot_summary["fertilizers"] += mean_ferts
-        fert_have += mean_ferts
-        chain.append("Dungeon")
-        loot_summary["golden_harps"] -= mean_harps_spent
-        loot_summary["royal_cheese"] -= mean_royal
-        loot_summary["lavish_cheese"] -= mean_lavish
-
-    def run_ballroom():
-        nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_lavish, hunts_with_beanster, noise_summary, harps_summary
-        res = simulate_ballroom(trap_power, trap_luck, use_ref, None, n_runs)
-        (mean_h, _, _, mean_rbean, _, _, mean_harps, _, _, mean_mysts, _, _, mean_ferts, _, _, mean_beanster, _, _, mean_lavish, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
-        total_hunts += mean_h
-        hunts_with_royal += mean_royal
-        hunts_with_lavish += mean_lavish
-        hunts_with_beanster += mean_beanster
-        noise_summary += mean_noise
-        harps_summary += mean_harps_spent
-        loot_summary["royal_beans"] += mean_rbean
-        loot_summary["golden_harps"] += mean_harps
-        loot_summary["mysts"] += mean_mysts
-        loot_summary["fertilizers"] += mean_ferts
-        fert_have += mean_ferts
-        chain.append("Ballroom")
-        loot_summary["golden_harps"] -= mean_harps_spent
-        loot_summary["royal_cheese"] -= mean_royal
-        loot_summary["lavish_cheese"] -= mean_lavish
-
-    def run_greathall():
-        nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_lavish, noise_summary, harps_summary
-        res = simulate_greathall(trap_power, trap_luck, use_ref, n_runs)
-        (mean_h, _, _, mean_eggs, _, _, mean_ferts, _, _, mean_lavish, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
-        total_hunts += mean_h
-        hunts_with_royal += mean_royal
-        hunts_with_lavish += mean_lavish
-        noise_summary += mean_noise
-        harps_summary += mean_harps_spent
-        loot_summary["golden_eggs"] += mean_eggs
-        loot_summary["fertilizers"] += mean_ferts
-        fert_have += mean_ferts
-        chain.append("Great Hall")
-        loot_summary["golden_harps"] -= mean_harps_spent
-        loot_summary["royal_cheese"] -= mean_royal
-        loot_summary["lavish_cheese"] -= mean_lavish
-
-    def run_harp_farm():
-        nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_lavish, hunts_with_beanster, noise_summary, harps_summary
-        res = simulate_ballroom(trap_power, trap_luck, use_ref, "harps", n_runs)
-        (mean_h, _, _, mean_rbean, _, _, mean_harps, _, _, mean_mysts, _, _, mean_ferts, _, _, mean_beanster, _, _, mean_lavish, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
-        total_hunts += mean_h
-        hunts_with_royal += mean_royal
-        hunts_with_lavish += mean_lavish
-        hunts_with_beanster += mean_beanster
-        noise_summary += mean_noise
-        harps_summary += mean_harps_spent
-        loot_summary["royal_beans"] += mean_rbean
-        loot_summary["golden_harps"] += mean_harps
-        loot_summary["mysts"] += mean_mysts
-        loot_summary["fertilizers"] += mean_ferts
-        fert_have += mean_ferts
-        chain.append("Ballroom (harp farm)")
-        loot_summary["golden_harps"] -= mean_harps_spent
-        loot_summary["royal_cheese"] -= mean_royal
-        loot_summary["lavish_cheese"] -= mean_lavish
-
-    def run_lavish_farm():
-        nonlocal total_hunts, fert_have, hunts_with_royal, hunts_with_lavish, hunts_with_beanster, noise_summary, harps_summary
-        res = simulate_dungeon(trap_power, trap_luck, use_ref, "lavish", n_runs)
-        (mean_h, _, _, mean_lbean, _, _, mean_mbean, _, _, mean_mysts, _, _, mean_ferts, _, _, mean_beanster, _, _, mean_lavish, _, _, mean_royal, _, _, mean_noise, _, _, mean_harps_spent, _, _) = res
-        total_hunts += mean_h
-        hunts_with_royal += mean_royal
-        hunts_with_lavish += mean_lavish
-        hunts_with_beanster += mean_beanster
-        noise_summary += mean_noise
-        harps_summary += mean_harps_spent
-        loot_summary["lavish_beans"] += mean_lbean
-        loot_summary["magic_beans"] += mean_mbean
-        loot_summary["mysts"] += mean_mysts
-        loot_summary["fertilizers"] += mean_ferts
-        fert_have += mean_ferts
-        chain.append("Dungeon (lavish run)")
-        loot_summary["golden_harps"] -= mean_harps_spent
-        loot_summary["royal_cheese"] -= mean_royal
-        loot_summary["lavish_cheese"] -= mean_lavish
-
-    def refill_lavish(fert_have):
-        # Repeat until lavish cheese >= 1000
-        while loot_summary["lavish_cheese"] < 1000:
-            # Always try to craft as many pairs as possible
-            pairs = min(loot_summary["lavish_beans"] // 16, loot_summary["golden_harps"] // 64)
-            crafted = pairs * 2
-            if pairs > 0:
-                loot_summary["lavish_cheese"] += crafted
-                loot_summary["lavish_beans"] -= pairs * 16
-                loot_summary["golden_harps"] -= pairs * 64
-            # If not enough harps for next craft, farm harps
-            elif loot_summary["golden_harps"] < 64:
-                # Check for fertilizer for Ballroom
-                if fert_have < stage_cost["Ballroom"]:
-                    # Farm fertilizer first
-                    while fert_have < stage_cost["Dungeon"]:
-                        run_beanstalk()
-                    fert_have -= stage_cost["Dungeon"]
-                    loot_summary["fertilizers"] -= stage_cost["Dungeon"]
-                    run_dungeon()
-                fert_have -= stage_cost["Ballroom"]
-                loot_summary["fertilizers"] -= stage_cost["Ballroom"]
-                run_harp_farm()
-            # If not enough lavish beans for next craft, farm lavish beans
-            elif loot_summary["lavish_beans"] < 16:
-                # Check for fertilizer for Dungeon
-                if fert_have < stage_cost["Dungeon"]:
-                    run_beanstalk()
-                    fert_have += loot_summary["fertilizers"]
-                fert_have -= stage_cost["Dungeon"]
-                loot_summary["fertilizers"] -= stage_cost["Dungeon"]
-                run_lavish_farm()
+        # Check if we have enough harp to do a farming run at any stage
+        if inv["harps"] < threshold_harps:
+            if inv["ferts"] < fert_costs["Dungeon"]:
+                stage = "Beanstalk"
+                loot = avg_beanstalk
+                fert_spent = 0
+            elif inv["ferts"] < fert_costs["Ballroom"]:
+                stage = "Dungeon (R1R)"
+                loot = avg_r1r_dungeon
+                fert_spent = fert_costs["Dungeon"]
             else:
-                # Should not reach here, but break to avoid infinite loop
-                break
+                stage = "Ballroom (Harps)"
+                loot = avg_harps_farm
+                fert_spent = fert_costs["Ballroom"]
 
-    while loot_summary["golden_eggs"] < goal:
-        # Ensure lavish cheese is refilled before proceeding
-        refill_lavish(fert_have)
-        # If harps are low, farm harps first
-        while loot_summary["golden_harps"] < 5000:
-            # Check if enough fertilizer for Ballroom
-            if fert_have < stage_cost["Ballroom"]:
-                # Farm fertilizer first
-                while fert_have < stage_cost["Dungeon"]:
-                    run_beanstalk()
-                fert_have -= stage_cost["Dungeon"]
-                loot_summary["fertilizers"] -= stage_cost["Dungeon"]
-                run_dungeon()
-            fert_have -= stage_cost["Ballroom"]
-            loot_summary["fertilizers"] -= stage_cost["Ballroom"]
-            run_harp_farm()
-        # If not enough fertilizer for Great Hall, farm it
-        while fert_have < stage_cost["Great Hall"]:
-            # If not enough for Ballroom, farm Dungeon
-            while fert_have < stage_cost["Ballroom"]:
-                # If not enough for Dungeon, farm Beanstalk
-                while fert_have < stage_cost["Dungeon"]:
-                    run_beanstalk()
-                fert_have -= stage_cost["Dungeon"]
-                loot_summary["fertilizers"] -= stage_cost["Dungeon"]
-                run_dungeon()
-            fert_have -= stage_cost["Ballroom"]
-            loot_summary["fertilizers"] -= stage_cost["Ballroom"]
-            run_ballroom()
-        # Now run Great Hall
-        fert_have -= stage_cost["Great Hall"]
-        loot_summary["fertilizers"] -= stage_cost["Great Hall"]
-        run_greathall()
+        # Check if we have enough royal cheese to do a farming run at any stage
+        elif inv["royal"] < threshold_royal:
+            if inv["ferts"] < fert_costs["Dungeon"]:
+                stage = "Beanstalk"
+                loot = avg_beanstalk
+                fert_spent = 0
+            elif inv["ferts"] < fert_costs["Ballroom"]:
+                stage = "Dungeon (R1R)"
+                loot = avg_r1r_dungeon
+                fert_spent = fert_costs["Dungeon"]
+            else:
+                stage = "Ballroom (Royal)"
+                loot = avg_rbean_farm
+                fert_spent = fert_costs["Ballroom"]
+                # Convert beans to beansters
+                craft = min(inv["rbean"] // 128, inv["lbean"] // 64)
+                made = craft * 2
+                inv["royal"] += made
+                inv["rbean"] -= craft * 128
+                inv["lbean"] -= craft * 64
 
-    return chain, total_hunts, hunts_with_royal, hunts_with_lavish, hunts_with_beanster, hunts_with_stalk, noise_summary, harps_summary, loot_summary
+        # Check if we have enough (leaping) lavish cheese to do a farming run at any stage
+        elif inv["llavi"] < threshold_llavi:
+            if inv["ferts"] < fert_costs["Dungeon"]:
+                stage = "Beanstalk"
+                loot = avg_beanstalk
+                fert_spent = 0
+            else:
+                stage = "Dungeon (Lapis)"
+                loot = avg_lbean_farm
+                fert_spent = fert_costs["Dungeon"]
+                # Convert beans to beansters
+                craft = min(inv["lbean"] // 16, inv["harps"] // 64)
+                made = craft * 2
+                inv["llavi"] += made
+                inv["harps"] -= craft * 64
+                inv["lbean"] -= craft * 16
+
+        # If we have enough resources, go to Greathall
+        else:
+            if inv["ferts"] < fert_costs["Dungeon"]:
+                stage = "Beanstalk"
+                loot = avg_beanstalk
+                fert_spent = 0
+            elif inv["ferts"] < fert_costs["Ballroom"]:
+                stage = "Dungeon (R1R)"
+                loot = avg_r1r_dungeon
+                fert_spent = fert_costs["Dungeon"]
+            elif inv["ferts"] < fert_costs["Great Hall"]:
+                stage = "Ballroom (R1R)"
+                loot = avg_r1r_ballroom
+                fert_spent = fert_costs["Ballroom"]
+            else:
+                stage = "Great Hall"
+                loot = avg_run_greathall
+                fert_spent = fert_costs["Great Hall"]
+
+        # Deduct fert spent
+        inv["ferts"] -= fert_spent
+        
+        # Update inventory
+        if loot:
+            for keys, vals in loot.items():
+                if keys != "hunts":
+                    inv[keys] = inv.get(keys, 0) + int(vals)
+            inv["harps"] -= int(loot["harps_spent"])
+            if "geggs" in loot:
+                egg_count += int(loot["geggs"])
+        chain.append({"stage": stage, "eggs": egg_count, **{keys: int(vals) for keys, vals in loot.items()}, "inv": inv.copy()})
+
+    return chain
 
 # Main
 if __name__ == "__main__":
@@ -771,41 +722,36 @@ if __name__ == "__main__":
     print(f"========== Input your setup ==========")
     trap_power = int(input("Enter Trap Power: "))
     trap_luck = int(input("Enter Trap Luck: "))
-    use_ref = int(input("(At least Ruby) Refractor Base? (1=yes, 0=no): "))
+    use_ref = bool(int(input("(At least Ruby) Refractor Base? (1=yes, 0=no): ")))
     
     # Plan chain mode prereq
     print("\n========== Input your inventory ==========")
     inventory = {
-        "lavish_cheese": int(input("Current Leaping Lavish Cheese: ")),
-        "royal_cheese": int(input("Current Royal Beanster Cheese: ")),
-        "lavish_beans": int(input("Current Lavish Beans: ")),
-        "magic_beans": int(input("Current Magic Beans: ")),
-        "royal_beans": int(input("Current Royal Beans: ")),
-        "golden_harps": int(input("Current Golden Harps: ")),
-        "golden_eggs": int(input("Current Golden Eggs: ")),
-        #"mysteries": int(input("Current Mystery Loot: ")),
-        "fertilizers": int(input("Current Fabled Fertilizers: "))
-    }
+        "llavi": int(input("Current Leaping Lavish Cheese: ")),
+        "royal": int(input("Current Royal Beanster Cheese: ")),
+        "lbean": int(input("Current Lavish Beans: ")),
+        "mbean": int(input("Current Magic Beans: ")),
+        "rbean": int(input("Current Royal Beans: ")),
+        "harps": int(input("Current Golden Harps: ")),
+        "geggs": int(input("Current Golden Eggs: ")),
+        "ferts": int(input("Current Fabled Fertilizers: "))}
+    
     # Target
-    print("========== Input your target ==========")
-    goal = int(input("Number of target loot: "))
+    print("\n========== Input your target ==========")
+    goal = int(input("Number of target eggs: "))
     
     # Plan the chain run
-    chain, total_hunts, total_royal, total_lavish, total_beanster, total_sb, total_noise, total_harps, loot_summary = plan_chain(
-        inventory, trap_power, trap_luck, use_ref, goal, n_runs=10000)
+    chain = plan_chain(trap_power, trap_luck, use_ref, goal, inventory)
 
+    # Print result
     print("\n========== Plan Run Result ==========")
-    print(f"Planned chain: {' -> '.join(chain)}")
-    print("========== Plan Run Result ==========")
-    print(f"Total average hunts: {total_hunts:.2f}")
-    print(f"Average hunts with SB+ (beanstalk): {total_sb:.2f}")
-    print(f"Average hunts with Beanster: {total_beanster:.2f}")
-    print(f"Average hunts with Lavish: {total_lavish:.2f}")
-    print(f"Average hunts with Royal: {total_royal:.2f}")
-    print(f"Average noise raised during the run: {total_noise:.2f}")
-    print(f"Average harps required for the run: {total_harps:.2f}")
-    print("\n========== Plan Run Result ==========")
-    print("Average final loot gained:")
-    for k, v in loot_summary.items():
-        if v > 0:
-            print(f"  {k}: {v:.2f}")
+    if "error" in chain[0]:
+        print(chain[0]["error"])
+        exit(1)
+    print(f"Planned chain to reach {goal} eggs:")
+    for i, step in enumerate(chain, start=1):
+        eggs = step.get("geggs", 0)
+        print(f"{i:3} - {step['stage']:25} | Eggs: {eggs}")
+    print("========== Final Inventory ==========")
+    print(chain[-1]["inv"])
+    
