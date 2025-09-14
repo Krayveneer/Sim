@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 import numpy as np
 import random
 import math
@@ -131,8 +133,74 @@ class MiceData:
     def catch_rate(self, trap_power, trap_luck, mouse_power, mouse_eff):
         return min(1, (trap_power*mouse_eff + 2*(math.floor(trap_luck*min(mouse_eff,1.4))**2)) / (mouse_power + trap_power*mouse_eff))
 
+# Result Storage
+@dataclass
+class SimResult:
+    hunts: List[int]
+    loot: Dict[str, List[int]]
+
+    def mean(self) -> Dict[str, float]:
+        return {key: float(np.mean(vals)) for key, vals in {**self.loot, "hunts": self.hunts}.items()}
+    def std(self) -> Dict[str, float]:
+        return {key: float(np.std(vals)) for key, vals in {**self.loot, "hunts": self.hunts}.items()}
+
+# Do hunt simulation
+def do_sim(mice: MiceData,
+           trap_power: int,
+           trap_luck: int,
+           n_hunts: int,
+           cheese: str,
+           zone: str,
+           loot_multi: int,
+           room_type: Optional[str] = None,
+           ) -> Dict[str, List[int]]:
+    
+    # Result dictionary
+    out = {"beans": 0, "ferts": 0, "harps": 0,
+           "mbean": 0, "lbean": 0, "rbean": 0, "mysts": 0, 
+           "norms": 0, "bster": 0, "llavi": 0, "royal": 0,
+           "geggs": 0, "noise": 0, "harps_spent": 0}
+    
+    # Loop over runs
+    for _ in range(n_hunts):
+        m_pow, m_eff, _ = mice.get_mouse(cheese, zone)
+        if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
+            # Generic counters
+            ## Count cheese spent for Beanstalk run
+            if cheese == "SB": out["norms"] += 1
+            ## Count cheese spent for Castle run
+            if cheese == "Beanster": out["bster"] += 1
+            if cheese == "Lavish": out["llavi"] += 1
+            if cheese == "Royal": out["royal"] += 1
+
+            # Zone specific counters
+            if zone == "Beanstalk":
+                out["beans"] += loot_multi
+            elif zone == "Dungeon":
+                if room_type == "lavish": out["lbean"] += loot_multi
+                elif room_type == "magic": out["mbean"] += loot_multi
+                elif room_type == "mysteries": out["mysts"] += loot_multi
+            elif zone == "Ballroom":
+                if room_type == "royal": out["rbean"] += loot_multi
+                elif room_type == "harps": out["harps"] += loot_multi
+                elif room_type == "mysteries": out["mysts"] += loot_multi
+            elif zone == "Great Hall":
+                out["geggs"] += loot_multi
+            
+    return out
+
+# Merge the result
+def merge_loot(*dicts: Dict[str, int]) -> Dict[str, int]:
+    out = {}
+    for d in dicts:
+        for keys, vals in d.items():
+            if keys not in out:
+                out[keys] = 0
+            out[keys] += vals
+    return out
+
 # Simulator for Beanstalk 
-def simulate_beanstalk(trap_power, trap_luck, use_ref, n_runs=1000):
+def simulate_beanstalk(trap_power: int, trap_luck: int, use_ref: bool, n_runs: int=1000) -> SimResult:
     # Fetch mice data
     mice = MiceData()
 
@@ -148,18 +216,17 @@ def simulate_beanstalk(trap_power, trap_luck, use_ref, n_runs=1000):
     room_multi = {"Standard": 1, "Super": 2, "Extreme": 4, "Ultimate": 8}
 
     for _ in range(n_runs):
-        hunts = beans = ferts = 0
+        run_loot = {keys: 0 for keys in results if keys != "hunts"}
+        hunts = 0
 
         # Pick a room
         room = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
         multiplier = room_multi[room]
 
         # 20 guaranteed hunts
-        for _ in range(20):
-            hunts += 1
-            m_pow, m_eff, _ = mice.get_mouse("SB", "Beanstalk")
-            if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                beans += multiplier
+        hunts += 20
+        loot = do_sim(mice, trap_power, trap_luck, 20, "SB", "Beanstalk", multiplier)
+        run_loot = merge_loot(run_loot, loot)
 
         # Boss fight
         boss = mice.get_boss("Beanstalk")
@@ -168,401 +235,262 @@ def simulate_beanstalk(trap_power, trap_luck, use_ref, n_runs=1000):
         while not boss_caught:
             hunts += 1
             if random.random() < mice.catch_rate(trap_power, trap_luck, b_pow, b_eff):
-                beans += multiplier + 20
-                ferts += 1
+                run_loot["beans"] += multiplier + 20
+                run_loot["ferts"] += 1
                 boss_caught = True
 
+        # If using refractor base, double ferts
         if use_ref:
             ferts *= 2
 
+        # Append results
         results["hunts"].append(hunts)
-        results["beans"].append(beans)
-        results["ferts"].append(ferts)
+        for keys in run_loot:
+            results.setdefault(keys, []).append(run_loot[keys])
 
-    return (
-        np.mean(results["hunts"]), np.std(results["hunts"]), results["hunts"],
-        np.mean(results["beans"]), np.std(results["beans"]), results["beans"],
-        np.mean(results["ferts"]), np.std(results["ferts"]), results["ferts"]
-    )
+    return SimResult(results["hunts"], {keys: results[keys] for keys in results.items() if keys != "hunts"})
+
+# Simulator for Room 1 Retreat
+def simulate_r1r(mice: MiceData, trap_power: int, trap_luck: int, 
+                room_types: List[str], room_probs: List[float], room_dicts: Dict[str, List[float]],
+                denom_names: List[str], denom_mults: List[int],
+                loot_keys: Dict[str, str], boss_reward: Dict[str, int], noise_cap: int, zone: str) -> Dict[str, int]:
+    # Initialize results dictionary
+    results = {
+        "hunts": 0, "mbean": 0, "lbean": 0, "rbean": 0, "harps": 0, "mysts": 0, 
+        "ferts": 0, "bster": 0, "llavi": 0, "royal": 0, "noise": 0, "harps_spent": 0}
+    boss_caught = False
+
+    # Roll for the room
+    room_type = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
+    denom = np.random.choice(denom_names, p=np.array(room_dicts[room_type])/sum(room_dicts[room_type]))
+    multiplier = denom_mults[denom_names.index(denom)]
+
+    # Leaping lavish cheese for 4 hunts
+    for _ in range(4):
+        results["hunts"] += 1
+        results["llavi"] += 1
+        results["noise"] += 4 * multiplier # 4 from (leaping) lavish
+        m_pow, m_eff, _ = mice.get_mouse("Lavish", zone)
+        if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
+            results[loot_keys[room_type]] += 4 * multiplier
+    # Expend harps to fill noise meter
+    results["harps_spent"] += (noise_cap - results["noise"])
+
+    # Beanster cheese for 20 hunts
+    for _ in range(19):
+        results["hunts"] += 1
+        results["bster"] += 1
+        m_pow, m_eff, _ = mice.get_mouse("Beanster", zone)
+        if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
+            results[loot_keys[room_type]] += 2 * multiplier # 1 from beanster, 1 from chase 
+
+    # Boss fight
+    boss = mice.get_boss(zone)
+    while not boss_caught:
+        results["hunts"] += 1
+        results["bster"] += 1
+        if random.random() < mice.catch_rate(trap_power, trap_luck, boss["powers"][0], boss["effects"][0]):
+            for k, v in boss_reward.items():
+                results[k] += v
+            results[loot_keys[room_type]] += 2 * multiplier
+            boss_caught = True
+        
+    return results
+
+# Simulator for farming a specific loot
+def simulate_farm(mice: MiceData, trap_power: int, trap_luck: int, 
+                  room_types: List[str], room_probs: List[float], room_dicts: Dict[str, List[float]],
+                  denom_names: List[str], denom_mults: List[int],
+                  loot_keys: Dict[str, str], boss_reward: Dict[str, int],
+                  target_loot: Optional[str], zone: str) -> Dict[str, int]:
+    # Initialize results dictionary
+    results = {
+        "hunts": 0, "mbean": 0, "lbean": 0, "rbean": 0, "harps": 0, "mysts": 0, 
+        "ferts": 0, "bster": 0, "llavi": 0, "royal": 0, "noise": 0, "harps_spent": 0}
+    boss_caught = False
+
+    while not boss_caught:
+        # Roll for the room
+        room_type = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
+        denom = np.random.choice(denom_names, p=np.array(room_dicts[room_type])/sum(room_dicts[room_type]))
+        multiplier = denom_mults[denom_names.index(denom)]
+
+        # Leaping lavish cheese for 4 hunts
+        for _ in range(4):
+            results["hunts"] += 1
+            results["llavi"] += 1
+            results["noise"] += 16 * multiplier # 4 from (leaping) lavish, 4 from feather and quill
+            m_pow, m_eff, _ = mice.get_mouse("Lavish", zone)
+            if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
+                results[loot_keys[room_type]] += 16 * multiplier
+
+        # Spend harps to erase noise
+        results["harps_spent"] += results["noise"]
+        results["noise"] = 0
+
+        # Check for ultimate room
+        if denom == "Ultimate" and room_type == target_loot:
+            # Use Royal cheese for 20 hunts
+            for _ in range(20):
+                results["hunts"] += 1
+                results["royal"] += 1
+                m_pow, m_eff, _ = mice.get_mouse("Royal", zone)
+                if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
+                    results[loot_keys[room_type]] += 1024 # 16 from cheese, 2 from CC, 4 from feather and quill
+            # Giant chase
+            for _ in range(19):
+                results["hunts"] += 1
+                results["royal"] += 1
+                m_pow, m_eff, _ = mice.get_mouse("Royal", zone)
+                if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
+                    results[loot_keys[room_type]] += 2048
+            # Boss fight
+            boss = mice.get_boss(zone)
+            while not boss_caught:
+                results["hunts"] += 1
+                results["royal"] += 1
+                if random.random() < mice.catch_rate(trap_power, trap_luck, boss["powers"][0], boss["effects"][0]):
+                    for keys, vals in boss_reward.items():
+                        results[keys] += vals
+                    results[loot_keys[room_type]] += 2048
+                    boss_caught = True
+
+    return results
 
 # Simulator for Dungeon
-def simulate_dungeon(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
+def simulate_dungeon(trap_power: int, trap_luck: int, use_ref: bool, target_loot: Optional[str]=None, n_runs: int=1000) -> SimResult:
     # Fetch mice data
     mice = MiceData()
     
     # Initialize results dictionary
     results = {
         "hunts": [], "lbean": [], "mbean": [], "mysts": [], "ferts": [],
-        "bster": [], "llavi": [], "royal": [], "noise": [], "harps_spent": []
-    }
+        "bster": [], "llavi": [], "royal": [], "noise": [], "harps_spent": []}
 
-    # Initialize cheese multiplier dictionary
-    cheese_multiplier = {"SB": 1, "Beanster": 2, "Lavish": 4, "Royal": 16}
+    # Room 1 Retreat parameter
+    r1r_params = dict(
+        room_types = ["lavish", "magic", "mysteries"],
+        room_probs = [0.706, 0.152, 0.141],
+        room_dicts = {
+            "lavish": [0.043, 0.261, 0.272, 0.130],
+            "magic": [0.065, 0.043, 0.022, 0.022],
+            "mysteries": [0.087, 0.054, 0.0, 0.0]},
+        denom_names = ["Standard", "Super", "Extreme", "Ultimate"],
+        denom_mults = [1, 2, 4, 8],
+        loot_keys = {"lavish": "lbean", "magic": "mbean", "mysteries": "mysts"},
+        boss_reward = {"mbean": 20, "ferts": 5},
+        noise_cap = 200)
+    
+    # Ultimate Target Farming parameter
+    farm_params = dict(
+        room_types = ["lavish", "magic", "mysteries"],
+        room_probs = [0.861, 0.093, 0.046],
+        room_dicts = {
+            "lavish": [0.287, 0.441, 0.133],
+            "magic": [0.062, 0.022, 0.009],
+            "mysteries": [0.037, 0.009, 0.0]},
+        denom_names = ["Super", "Extreme", "Ultimate"],
+        denom_mults = [2, 4, 8],
+        loot_keys = {"lavish": "lbean", "magic": "mbean", "mysteries": "mysts"},
+        boss_reward = {"mbean": 20, "ferts": 5})
 
-    # Room setup
-    room_types = ["lavish", "magic", "mysteries"]
+    # Simulate run
+    if target_loot is None:
+        # Default to R1R
+        run_loot = simulate_r1r(mice, trap_power, trap_luck, **r1r_params, zone = "Dungeon")
+    else:
+        # Find ultimate target room to farm
+        run_loot = simulate_farm(mice, trap_power, trap_luck, **farm_params, target_loot = target_loot, zone = "Dungeon")
+    
+    # Double ferts if using refractor base
+    if use_ref:
+        run_loot["ferts"] *= 2
 
-    # Check if the target loot is in this stage
-    has_target = target_loot in room_types if target_loot else False
+    # Append results
+    results["hunts"].append(run_loot["hunts"])
+    for keys in run_loot:
+        if keys != "hunts":
+            results[keys].append(run_loot[keys])
 
-    for _ in range(n_runs):
-        hunts = lbean = mbean = mysts = ferts = bster = llavi = royal = noise = noise_raise = harps_spent = 0
-        boss_caught = False
-
-        if not has_target:
-            # Room 1 Retreat and no key
-            room_probs = [0.706, 0.152, 0.141]
-            room_dicts = {
-                "lavish": [0.043, 0.261, 0.272, 0.130],
-                "magic": [0.065, 0.043, 0.022, 0.022],
-                "mysteries": [0.087, 0.054, 0.0, 0.0]}
-            name_denom = ["Standard", "Super", "Extreme", "Ultimate"]
-            mult_denom = [1, 2, 4, 8]
-            # Roll for room type and denom
-            room_type = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
-            denom = np.random.choice(name_denom, p=np.array(room_dicts[room_type])/sum(room_dicts[room_type]))
-            denom_idx = name_denom.index(denom)
-            room_multiplier = mult_denom[denom_idx]
-
-            # Leaping lavish cheese for 4 hunts
-            lavish_loot_multi = cheese_multiplier["Lavish"] * room_multiplier
-            noise = 0
-            for _ in range(4):
-                hunts += 1
-                llavi += 1
-                noise += lavish_loot_multi
-                m_pow, m_eff, _ = mice.get_mouse("Lavish", "Dungeon")
-                if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                    if room_type == "lavish": lbean += lavish_loot_multi
-                    elif room_type == "magic": mbean += lavish_loot_multi
-                    elif room_type == "mysteries": mysts += lavish_loot_multi
-
-            # Use harps to fill noise meter
-            harps_spent += (300 - noise)
-
-            # Beanster cheese for 20 hunts
-            beanster_loot_multi = cheese_multiplier["Beanster"] * room_multiplier
-            for _ in range(20):
-                hunts += 1
-                bster += 1
-                m_pow, m_eff, _ = mice.get_mouse("Beanster", "Dungeon")
-                if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                    if room_type == "lavish": lbean += beanster_loot_multi
-                    elif room_type == "magic": mbean += beanster_loot_multi
-                    elif room_type == "mysteries": mysts += beanster_loot_multi
-
-            # Fight the giant
-            boss = mice.get_boss("Dungeon")
-            b_pow, b_eff = boss["powers"][0], boss["effects"][0]
-            while not boss_caught:
-                hunts += 1
-                bster += 1
-                if random.random() < mice.catch_rate(trap_power, trap_luck, b_pow, b_eff):
-                    mbean += 40
-                    ferts += 5
-                    if room_type == "lavish": lbean += beanster_loot_multi
-                    elif room_type == "magic": mbean += beanster_loot_multi
-                    elif room_type == "mysteries": mysts += beanster_loot_multi
-                    boss_caught = True
-
-        else:
-            # Target room exists, chase it
-            room_probs = [0.861, 0.093, 0.046]
-            room_dicts = {
-                "lavish": [0.287, 0.441, 0.133],
-                "magic": [0.062, 0.022, 0.009],
-                "mysteries": [0.037, 0.009, 0.0]}
-            name_denom = ["Super", "Extreme", "Ultimate"]
-            mult_denom = [2, 4, 8]
-            # Use leaping lavish until Ultimate Target room
-            while not boss_caught:
-                # Roll for room type and denom
-                room_type = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
-                denom = np.random.choice(name_denom, p=np.array(room_dicts[room_type])/sum(room_dicts[room_type]))
-                denom_idx = name_denom.index(denom)
-                room_multiplier = mult_denom[denom_idx]
-
-                # Set cheese to be leaping lavish
-                active_cheese = "Lavish"
-                # A factor of 4 from feather and gold quill
-                loot_multi = 4 * cheese_multiplier[active_cheese] * room_multiplier
-                
-                for _ in range(4):
-                    hunts += 1
-                    llavi += 1
-                    # Record noise
-                    noise += loot_multi
-                    m_pow, m_eff, _ = mice.get_mouse("Lavish", "Dungeon")
-                    if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                        if room_type == "lavish": lbean += loot_multi
-                        elif room_type == "magic": mbean += loot_multi
-                        elif room_type == "mysteries": mysts += loot_multi
-
-                # Remove noise after every room
-                harps_spent += noise
-                noise_raise += noise
-                noise = 0
-
-                # If Ultimate Target room, switch to royal cheese and CC
-                if denom == "Ultimate" and room_type == target_loot:
-                    # A factor of 8 from CC, feather and gold quill
-                    loot_multi = 8 * cheese_multiplier["Royal"] * room_multiplier
-                    
-                    # 20 hunts with royal cheese
-                    for _ in range(20):
-                        hunts += 1
-                        royal += 1
-                        m_pow, m_eff, _ = mice.get_mouse("Royal", "Dungeon")
-                        if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                            if room_type == "lavish": lbean += loot_multi
-                            elif room_type == "magic": mbean += loot_multi
-                            elif room_type == "mysteries": mysts += loot_multi
-
-                    # Giant chase: another 20 hunts with royal cheese
-                    loot_multi_giant = loot_multi * 2
-                    for _ in range(20):
-                        hunts += 1
-                        royal += 1
-                        m_pow, m_eff, _ = mice.get_mouse("Royal", "Dungeon")
-                        if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                            if room_type == "lavish": lbean += loot_multi_giant
-                            elif room_type == "magic": mbean += loot_multi_giant
-                            elif room_type == "mysteries": mysts += loot_multi_giant
-
-                    # Fight the giant
-                    boss = mice.get_boss("Dungeon")
-                    b_pow, b_eff = boss["powers"][0], boss["effects"][0]
-                    while not boss_caught:
-                        hunts += 1
-                        royal += 1
-                        if random.random() < mice.catch_rate(trap_power, trap_luck, b_pow, b_eff):
-                            mbean += 40
-                            ferts += 5
-                            if room_type == "lavish": lbean += loot_multi_giant
-                            elif room_type == "magic": mbean += loot_multi_giant
-                            elif room_type == "mysteries": mysts += loot_multi_giant
-                            boss_caught = True
-
-        if use_ref: ferts *= 2
-        results["hunts"].append(hunts)
-        results["lbean"].append(lbean)
-        results["mbean"].append(mbean)
-        results["mysts"].append(mysts)
-        results["ferts"].append(ferts)
-        results["bster"].append(bster)
-        results["llavi"].append(llavi)
-        results["royal"].append(royal)
-        results["noise"].append(noise_raise)
-        results["harps_spent"].append(harps_spent)
-
-    return (
-        np.mean(results["hunts"]), np.std(results["hunts"]), results["hunts"],
-        np.mean(results["lbean"]), np.std(results["lbean"]), results["lbean"],
-        np.mean(results["mbean"]), np.std(results["mbean"]), results["mbean"],
-        np.mean(results["mysts"]), np.std(results["mysts"]), results["mysts"],
-        np.mean(results["ferts"]), np.std(results["ferts"]), results["ferts"],
-        np.mean(results["bster"]), np.std(results["bster"]), results["bster"],
-        np.mean(results["llavi"]), np.std(results["llavi"]), results["llavi"],
-        np.mean(results["royal"]), np.std(results["royal"]), results["royal"],
-        np.mean(results["noise"]), np.std(results["noise"]), results["noise"],
-        np.mean(results["harps_spent"]), np.std(results["harps_spent"]), results["harps_spent"]
-    )
+    return SimResult(results["hunts"], {keys: results[keys] for keys in results if keys != "hunts"})
 
 # Simulator for Ballroom
-def simulate_ballroom(trap_power, trap_luck, use_ref, target_loot, n_runs=1000):
+def simulate_ballroom(trap_power: int, trap_luck: int, use_ref: bool, target_loot: Optional[str]=None, n_runs: int=1000) -> SimResult:
     # Fetch mice data
     mice = MiceData()
 
     # Initialize results dictionary
     results = {
         "hunts": [], "rbean": [], "harps": [], "mysts": [], "ferts": [],
-        "bster": [], "llavi": [], "royal": [], "noise": [], "harps_spent": []
-    }
+        "bster": [], "llavi": [], "royal": [], "noise": [], "harps_spent": []}
 
-    # Initialize cheese multiplier dictionary
-    cheese_multiplier = {"SB": 1, "Beanster": 2, "Lavish": 4, "Royal": 16}
+    # Room 1 Retreat parameters
+    r1r_params = dict(
+        room_types = ["royal", "harps", "mysteries"],
+        room_probs = [0.672, 0.184, 0.144],
+        room_dicts = {
+            "royal": [0.070, 0.334, 0.201, 0.067],
+            "harps": [0.070, 0.054, 0.070, 0.023],
+            "mysteries": [0.057, 0.020, 0.017, 0.017]},
+        denom_names = ["Standard", "Super", "Extreme", "Ultimate"],
+        denom_mults = [1, 2, 4, 8],
+        loot_keys = {"royal": "rbean", "harps": "harps", "mysteries": "mysts"},
+        boss_reward = {"ferts": 20},
+        noise_cap = 400)
     
-    # Room setup
-    room_types = ["royal", "harps", "mysteries"]
+    # Ultimate Target Farming parameters
+    farm_params = dict(
+        room_types = ["royal", "harps", "mysteries"],
+        room_probs = [0.509, 0.359, 0.132],
+        room_dicts = {
+            "royal": [0.417,0.250,0.083],
+            "harps": [0.067,0.088,0.029],
+            "mysteries": [0.025,0.021,0.020]},
+        denom_names = ["Super", "Extreme", "Ultimate"],
+        denom_mults = [2, 4, 8],
+        loot_keys = {"royal": "rbean", "harps": "harps", "mysteries": "mysts"},
+        boss_reward = {"ferts": 20})
     
-    # Check if the target loot is in this stage
-    has_target = target_loot in room_types if target_loot else False
+    # Simulate runs
+    if target_loot is None:
+        # Default to R1R
+        run_loot = simulate_r1r(mice, trap_power, trap_luck, **r1r_params, zone = "Ballroom")
+    else:
+        # Find ultimate target room to farm
+        run_loot = simulate_farm(mice, trap_power, trap_luck, **farm_params, target_loot = target_loot, zone = "Ballroom")
+    
+    # Double ferts if using refractor base
+    if use_ref:
+        run_loot["ferts"] *= 2
 
-    for _ in range(n_runs):
-        # Initialize counters
-        hunts = rbean = harps = mysts = ferts = bster = llavi = royal = noise = noise_raise = harps_spent = 0
-        boss_caught = False
+    # Append results
+    results["hunts"].append(run_loot["hunts"])
+    for keys in run_loot:
+        if keys != "hunts":
+            results[keys].append(run_loot[keys])
 
-        if not has_target:
-            # Room 1 Retreat and no key
-            room_probs = [0.672, 0.184, 0.144]
-            room_dicts = {
-                "royal": [0.070, 0.334, 0.201, 0.067],
-                "harps": [0.070, 0.054, 0.070, 0.023],
-                "mysteries": [0.057, 0.020, 0.017, 0.017]}
-            name_denom = ["Standard", "Super", "Extreme", "Ultimate"]
-            mult_denom = [1, 2, 4, 8]
-            # No target room, run until boss caught
-            room_type = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
-            denom = np.random.choice(name_denom, p=np.array(room_dicts[room_type])/sum(room_dicts[room_type]))
-            denom_idx = name_denom.index(denom)
-            room_multiplier = mult_denom[denom_idx]
-            # Leaping lavish cheese for 4 hunts
-            lavish_loot_multi = cheese_multiplier["Lavish"] * room_multiplier
-            for _ in range(4):
-                hunts += 1
-                llavi += 1
-                noise += lavish_loot_multi
-                m_pow, m_eff, _ = mice.get_mouse("Lavish", "Ballroom")
-                if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                    if room_type == "royal": rbean += lavish_loot_multi
-                    elif room_type == "harps": harps += lavish_loot_multi
-                    elif room_type == "mysteries": mysts += lavish_loot_multi
-
-            # Use harps to fill noise meter
-            harps_spent += (400 - noise)
-
-            # Beanster cheese for 20 hunts
-            beanster_loot_multi = cheese_multiplier["Beanster"] * room_multiplier
-            for _ in range(20):
-                hunts += 1
-                bster += 1
-                m_pow, m_eff, _ = mice.get_mouse("Beanster", "Ballroom")
-                if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                    if room_type == "royal": rbean += beanster_loot_multi
-                    elif room_type == "harps": harps += beanster_loot_multi
-                    elif room_type == "mysteries": mysts += beanster_loot_multi
-
-            # Fight the giant
-            boss = mice.get_boss("Ballroom")
-            b_pow, b_eff = boss["powers"][0], boss["effects"][0]
-            while not boss_caught:
-                hunts += 1
-                bster += 1
-                if random.random() < mice.catch_rate(trap_power, trap_luck, b_pow, b_eff):
-                    ferts += 20
-                    if room_type == "royal": rbean += beanster_loot_multi
-                    elif room_type == "harps": harps += beanster_loot_multi
-                    elif room_type == "mysteries": mysts += beanster_loot_multi
-                    boss_caught = True
-
-        else:
-            # Target room exists, chase it
-            room_probs = [0.509, 0.359, 0.132]
-            room_dicts = {
-                "royal": [0.417,0.250,0.083],
-                "harps": [0.067,0.088,0.029],
-                "mysteries": [0.025,0.021,0.020]
-            }
-            name_denom = ["Super", "Extreme", "Ultimate"]
-            mult_denom = [2, 4, 8]
-            # Use leaping lavish until Ultimate Target room
-            while not boss_caught:
-                room_type = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
-                denom = np.random.choice(name_denom, p=np.array(room_dicts[room_type])/sum(room_dicts[room_type]))
-                denom_idx = name_denom.index(denom)
-                room_multiplier = mult_denom[denom_idx]
-                # Factor of 4 from feather and gold quill
-                loot_multi = 4 * cheese_multiplier["Lavish"] * room_multiplier
-                # 4 hunts with leaping lavish cheese
-                for _ in range(4):
-                    hunts += 1
-                    llavi += 1
-                    noise += loot_multi
-                    m_pow, m_eff, _ = mice.get_mouse("Lavish", "Ballroom")
-                    if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                        if room_type == "royal": rbean += loot_multi
-                        elif room_type == "harps": harps += loot_multi
-                        elif room_type == "mysteries": mysts += loot_multi
-                
-                # Remove noise after every room
-                harps_spent += noise
-                noise_raise += noise
-                noise = 0
-
-                # If Ultimate Target room, switch to royal cheese and CC
-                if denom == "Ultimate" and room_type == target_loot:
-                    # Factor of 8 from CC, feather and gold quill
-                    loot_multi = cheese_multiplier["Royal"] * room_multiplier * 8
-                    # 20 hunts with royal cheese
-                    for _ in range(20):
-                        hunts += 1
-                        royal += 1
-                        m_pow, m_eff, _ = mice.get_mouse("Royal", "Ballroom")
-                        if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                            if room_type == "royal": rbean += loot_multi
-                            elif room_type == "harps": harps += loot_multi
-                            elif room_type == "mysteries": mysts += loot_multi
-
-                    # Giant chase: another 20 hunts with royal cheese
-                    loot_multi_giant = loot_multi * 2
-                    for _ in range(20):
-                        hunts += 1
-                        royal += 1
-                        m_pow, m_eff, _ = mice.get_mouse("Royal", "Ballroom")
-                        if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                            if room_type == "royal": rbean += loot_multi_giant
-                            elif room_type == "harps": harps += loot_multi_giant
-                            elif room_type == "mysteries": mysts += loot_multi_giant
-
-                    # Fight the giant
-                    boss = mice.get_boss("Ballroom")
-                    b_pow, b_eff = boss["powers"][0], boss["effects"][0]
-                    while not boss_caught:
-                        hunts += 1
-                        royal += 1
-                        if random.random() < mice.catch_rate(trap_power, trap_luck, b_pow, b_eff):
-                            ferts += 20
-                            if room_type == "royal": rbean += loot_multi_giant
-                            elif room_type == "harps": harps += loot_multi_giant
-                            elif room_type == "mysteries": mysts += loot_multi_giant
-                            boss_caught = True
-
-        if use_ref: ferts *= 2
-        results["hunts"].append(hunts)
-        results["rbean"].append(rbean)
-        results["harps"].append(harps)
-        results["mysts"].append(mysts)
-        results["ferts"].append(ferts)
-        results["bster"].append(bster)
-        results["llavi"].append(llavi)
-        results["royal"].append(royal)
-        results["noise"].append(noise_raise)
-        results["harps_spent"].append(harps_spent)
-
-    return (
-        np.mean(results["hunts"]), np.std(results["hunts"]), results["hunts"],
-        np.mean(results["rbean"]), np.std(results["rbean"]), results["rbean"],
-        np.mean(results["harps"]), np.std(results["harps"]), results["harps"],
-        np.mean(results["mysts"]), np.std(results["mysts"]), results["mysts"],
-        np.mean(results["ferts"]), np.std(results["ferts"]), results["ferts"],
-        np.mean(results["bster"]), np.std(results["bster"]), results["bster"],
-        np.mean(results["llavi"]), np.std(results["llavi"]), results["llavi"],
-        np.mean(results["royal"]), np.std(results["royal"]), results["royal"],
-        np.mean(results["noise"]), np.std(results["noise"]), results["noise"],
-        np.mean(results["harps_spent"]), np.std(results["harps_spent"]), results["harps_spent"]
-    )
+    return SimResult(results["hunts"], {keys: results[keys] for keys in results if keys != "hunts"})
 
 # Simulator for Great Hall
-def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
+def simulate_greathall(trap_power: int, trap_luck: int, use_ref: bool, n_runs: int=1000) -> SimResult:
     # Fetch mice data
     mice = MiceData()
 
     # Initialize results dictionary
     results = {
-        "hunts": [], "geggs": [], "ferts": [], "llavi": [], "royal": [],
+        "hunts": [], "mbean": [], "lbean": [], "rbean": [],
+        "geggs": [], "ferts": [], "llavi": [], "royal": [],
         "noise": [], "harps_spent": []}
 
-    # Initialize cheese multiplier dictionary
-    cheese_multiplier = {"SB": 1, "Beanster": 2, "Lavish": 4, "Royal": 16}
-    
     # Room setup (always use key in Great Hall)
     room_types = ["Super", "Extreme", "Ultimate"]
     room_probs = [0.580, 0.245, 0.175]
     room_multi = {"Super": 2, "Extreme": 4, "Ultimate": 8}
 
     for _ in range(n_runs):
-        hunts = geggs = ferts = llavi = royal = noise = noise_raise = harps_spent = 0
+        run_loot = {keys: 0 for keys in results if keys != "hunts"}
+        hunts = 0
         boss_caught = False
 
         # Loop until boss caught (i.e. ultimate room found and completed)
@@ -571,74 +499,61 @@ def simulate_greathall(trap_power, trap_luck, use_ref, n_runs=1000):
             denom = np.random.choice(room_types, p=np.array(room_probs)/sum(room_probs))
             room_multiplier = room_multi[denom]
 
-            # A factor of 4 from feather and gold quill (always used in Great Hall)
-            loot_multi = 4 * cheese_multiplier["Lavish"] * room_multiplier
-
-            # 4 hunts with lavish
+            # Leaping lavish cheese for 4 hunts
             for _ in range(4):
                 hunts += 1
-                llavi += 1
-                noise += loot_multi
+                run_loot["llavi"] += 1
+                run_loot["noise"] += 16 * room_multiplier # 4 from (leaping) lavish, 4 from feather and quill
                 m_pow, m_eff, _ = mice.get_mouse("Lavish", "Great Hall")
                 if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                    geggs += loot_multi
-
-            # Remove noise after every room except Ultimate
-            if denom != "Ultimate":
-                harps_spent += noise
-                noise_raise += noise
-                noise = 0
+                    run_loot["geggs"] += 16 * room_multiplier
+            
+            # Reduce noise with harps
+            run_loot["harps_spent"] += run_loot["noise"]
+            run_loot["noise"] = 0
 
             # If Ultimate room, do 20 hunts with royal cheese, 20 hunts of chase, then boss
             if denom == "Ultimate":
-                # A factor of 8 from CC, feather and gold quill
-                loot_multi = 8 * cheese_multiplier["Royal"] * room_multiplier
+                # 20 hunts with royal cheese
                 for _ in range(20):
                     hunts += 1
-                    royal += 1
+                    run_loot["royal"] += 1
                     m_pow, m_eff, _ = mice.get_mouse("Royal", "Great Hall")
                     if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                        geggs += loot_multi
-                # Giant chase: another 20 hunts with royal cheese
-                loot_multi_ultimate = loot_multi * 2
-                for _ in range(20):
+                        run_loot["geggs"] += 1024
+                
+                # Giant chase: another 19 hunts with royal cheese
+                for _ in range(19):
                     hunts += 1
-                    royal += 1
+                    run_loot["royal"] += 1
                     m_pow, m_eff, _ = mice.get_mouse("Royal", "Great Hall")
                     if random.random() < mice.catch_rate(trap_power, trap_luck, m_pow, m_eff):
-                        geggs += loot_multi_ultimate
+                        run_loot["geggs"] += 2048
 
                 # Boss fight
                 boss = mice.get_boss("Great Hall")
-                b_pow, b_eff = boss["powers"][0], boss["effects"][0]
                 while not boss_caught:
                     hunts += 1
-                    royal += 1
-                    if random.random() < mice.catch_rate(trap_power, trap_luck, b_pow, b_eff):
-                        ferts += 10
-                        geggs += loot_multi_ultimate
+                    run_loot["royal"] += 1
+                    if random.random() < mice.catch_rate(trap_power, trap_luck, boss["powers"][0], boss["effects"][0]):
+                        run_loot["mbean"] += 100
+                        run_loot["lbean"] += 100
+                        run_loot["rbean"] += 100
+                        run_loot["ferts"] += 10
+                        run_loot["geggs"] += 2048
                         boss_caught = True
 
+        # Double ferts if using refractor base
         if use_ref:
-            ferts *= 2
+            run_loot["fert"] *= 2
 
+        # Append results
         results["hunts"].append(hunts)
-        results["geggs"].append(geggs)
-        results["ferts"].append(ferts)
-        results["llavi"].append(llavi)
-        results["royal"].append(royal)
-        results["noise"].append(noise_raise)
-        results["harps_spent"].append(harps_spent)
+        for keys in run_loot:
+            results.setdefault(keys, []).append(run_loot[keys])
 
-    return (
-        np.mean(results["hunts"]), np.std(results["hunts"]), results["hunts"],
-        np.mean(results["geggs"]), np.std(results["geggs"]), results["geggs"],
-        np.mean(results["ferts"]), np.std(results["ferts"]), results["ferts"],
-        np.mean(results["llavi"]), np.std(results["llavi"]), results["llavi"],
-        np.mean(results["royal"]), np.std(results["royal"]), results["royal"],
-        np.mean(results["noise"]), np.std(results["noise"]), results["noise"],
-        np.mean(results["harps_spent"]), np.std(results["harps_spent"]), results["harps_spent"]
-    )
+    return SimResult(results["hunts"], {keys: results[keys] for keys in results if keys != "hunts"})
+
 
 # Plan a chain of stages
 def plan_chain(inventory, trap_power, trap_luck, use_ref, goal, n_runs=1000):
