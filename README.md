@@ -24,24 +24,29 @@
 ## Assumptions
 
 Several assumptions have been made during the writing of this code:
-- A minimum of 100 Royal Beanster must be in the inventory
-    - Casually farm Royal Ruby Bean to fulfil this quota before using the simulator
-- A minimum of XX Leaping Lavish Beanster must be in the inventory
-    - Casually farm Lavish Lapis Bean and Golden Harps to fulfill this quota before using the simulator
+- A minimum of 200 Royal Beanster must be in the inventory before using the simulator
+    - Casually farm Royal Ruby Bean to fulfil this quota
+- A minimum of 100 Leaping Lavish Beanster must be in the inventory before using the simulator
+    - Casually farm Lavish Lapis Bean and Golden Harps to fulfill this quota
+- The minimum amount of cheese is required as to prevent infinite loop where the chain tries to balance and optimize farming runs of three different resources back to back at the same time
 - Leaping Lavish Beanster is used in any room that is not an Ultimate Target room
-- Room 1 Retreat strategy: 
+- Room 1 Retreat (R1R) strategy: 
     - This is employed for purely Fabled Fertilizer farming
-    - This forcibly utilizes Golden Harps to maximize noise upon the 3rd hunt to trigger Giant chase
+    - This forcibly utilizes Golden Harps to maximize noise prior to the 4th hunt to trigger Giant chase when the room ends
     - This utilizes Leaping Lavish Beanster to end the room and Beanster/SB/Gouda during Giant chase
 - Farming Run strategy: 
     - This employs Golden Goose Feather (with Golden Quill) and Giant's Golden Key 
     - This forcibly utilizes Golden Harps to reduce noise to zero (Auto Harp preferable) until reaching Ultimate Target room
     - This utilizes Royal Beanster and Condensed Creativity upon reaching Ultimate Target room
-- Logic check:
+- Stage logic check:
     - Always check for Fabled Fertilizer to enter a particular stage, and do R1R at the stage below it if found lacking
-    - Always check that Golden Harps is always more than 5.000, and do Golden Harps farming run if found lacking
+    - Always check that Golden Harps is always more than 10.000, and do Golden Harps farming run if found lacking
     - Always check that Royal Beanster is always more than 100, and do Royal Ruby Bean farming run if found lacking
-    - Always check that Leaping Lavish Beanster is always more than XX, and do Lavish Lapis Bean and Golden Harp farming runs if found lacking
+    - Always check that Leaping Lavish Beanster is always more than 75, and do Lavish Lapis Bean and Golden Harp farming runs if found lacking
+- Cheese logic check:
+    - Always spare 5.000 Golden Harps in reserve when crafting Leaping Lavish Beanster to sustain subsequent stage run
+    - Always craft Leaping Lavish Beanster when it is below 75
+    - Always craft Royal Beanster when it is below 100
 - Beanster cheeses are assumed to have been bought in the marketplace, or in stock in abundance
 
 ## Features
@@ -49,4 +54,6 @@ Several assumptions have been made during the writing of this code:
 - Simulates leaping and chase through rooms with custom trap power and trap luck
 - Uses of refractor base can be toggled
 - Plans a chain of castles that needs to be done to reach Golden Goose Eggs target
-- Outputs average for hunts at a given stage, stage chains, and compounded final loot gain
+- Inputs initial inventory of cheese, beans, harps, eggs, and fertilizers
+- Outputs an average of cheese used and loot gained for a given stage
+- Outputs a chain of stages and a compounded final loot gain during each stage to reach Golden Goose Eggs target

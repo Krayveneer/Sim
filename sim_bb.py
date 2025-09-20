@@ -541,7 +541,7 @@ def simulate_greathall(trap_power: int, trap_luck: int, use_ref: bool, n_runs: i
                         run_loot["mbean"] += 100
                         run_loot["lbean"] += 100
                         run_loot["rbean"] += 100
-                        run_loot["ferts"] += 10
+                        #run_loot["ferts"] += 10 # Disabled as fert from MGK is not guaranteed
                         run_loot["geggs"] += 2048
                         boss_caught = True
 
@@ -589,9 +589,10 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
         "Ballroom (Harps)": avg_harps_farm,
         "Great Hall": avg_run_greathall}
 
-    print("\n========== Print Average Beanster per Run ==========")
-    print(f"{'Stage':17} | {'royal':5} | {'llavi':5} | {'bster':5} | {'mbean':5} | {'lbean':5} | {'rbean':5} | {'harps':5}")
-    print("---------------------------------------------------------------------------")
+    print("\n========== Print Average Yield per Run ==========")
+    header = f"{'Stage':17} | {'royal':5} | {'llavi':5} | {'bster':5} | {'mbean':5} | {'lbean':5} | {'rbean':5} | {'harps+':5} | {'harps-':5}"
+    print(header)
+    print("-" * len(header))
     for stage, loot in precomp.items():
         royal = int(loot.get("royal", 0))
         llavi = int(loot.get("llavi", 0))
@@ -600,7 +601,8 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
         lbean = int(loot.get("lbean", 0))
         rbean = int(loot.get("rbean", 0))
         harps = int(loot.get("harps", 0))
-        print(f"{stage:17} | {royal:<5} | {llavi:<5} | {bster:<5} | {mbean:<5} | {lbean:<5} | {rbean:<5} | {harps:<5}")    
+        harps_spent = int(loot.get("harps_spent", 0))
+        print(f"{stage:17} | {royal:<5} | {llavi:<5} | {bster:<5} | {mbean:<5} | {lbean:<5} | {rbean:<5} | {harps:<5} | {harps_spent:<5}")    
 
     # Setup initial inventory
     inv = inventory.copy()
@@ -611,17 +613,17 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
     fert_costs = {"Dungeon": 1, "Ballroom": 12, "Great Hall": 100}
 
     # Define threshold
-    threshold_harps = 5000
+    threshold_harps = 10000
     threshold_royal = 100
-    threshold_llavi = 100
+    threshold_llavi = 75
 
     # Pre-check for (leaping) lavish and royal beansters 
     # This is important because then the logic would become a bit more complex without this boundary conditions
-    if inv["llavi"] < threshold_llavi:
-        return [{"error": f"Need at least {threshold_llavi} (leaping) lavish beanster to start the chain."}]
-    if inv["royal"] < threshold_royal:
-        return [{"error": f"Need at least {threshold_royal} royal beanster to start the chain."}]
-    
+    #if inv["llavi"] < threshold_llavi:
+    #    return [{"error": f"Need at least {threshold_llavi} (leaping) lavish beanster to start the chain."}]
+    #if inv["royal"] < threshold_royal:
+    #    return [{"error": f"Need at least {threshold_royal} royal beanster to start the chain."}]
+
     # Loop until target eggs reached
     while egg_count < target_eggs:
         stage = None
@@ -657,12 +659,6 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
                 stage = "Ballroom (Royal)"
                 loot = avg_rbean_farm
                 fert_spent = fert_costs["Ballroom"]
-                # Convert beans to beansters
-                craft = min(inv["rbean"] // 128, inv["lbean"] // 64)
-                made = craft * 2
-                inv["royal"] += made
-                inv["rbean"] -= craft * 128
-                inv["lbean"] -= craft * 64
 
         # Check if we have enough (leaping) lavish cheese to do a farming run at any stage
         elif inv["llavi"] < threshold_llavi:
@@ -674,12 +670,6 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
                 stage = "Dungeon (Lapis)"
                 loot = avg_lbean_farm
                 fert_spent = fert_costs["Dungeon"]
-                # Convert beans to beansters
-                craft = min(inv["lbean"] // 16, inv["harps"] // 64)
-                made = craft * 2
-                inv["llavi"] += made
-                inv["harps"] -= craft * 64
-                inv["lbean"] -= craft * 16
 
         # If we have enough resources, go to Greathall
         else:
@@ -704,14 +694,41 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
         inv["ferts"] -= fert_spent
         
         # Update inventory
+        consumed = {"royal", "llavi"}
         if loot:
+            # Subtract the used cheese
             for keys, vals in loot.items():
-                if keys != "hunts":
+                if keys in consumed:
+                    inv[keys] -= int(vals)
+            # Subtract harps spent
+            if "harps_spent" in loot:
+                inv["harps"] -= int(loot["harps_spent"])
+            # Add the loot gained
+            for keys, vals in loot.items():
+                if keys not in consumed and keys != "harps_spent" and keys != "hunts":
                     inv[keys] = inv.get(keys, 0) + int(vals)
-            inv["harps"] -= int(loot["harps_spent"])
+            # Craft cheese
+            if stage == "Ballroom (Royal)":
+                craft = min(inv["rbean"] // 128, inv["lbean"] // 64)
+                made = craft * 2
+                inv["royal"] += made
+                inv["rbean"] -= craft * 128
+                inv["lbean"] -= craft * 64
+            if stage == "Dungeon (Lapis)":
+                # Reserve some harps for next run
+                max_craft = inv["harps"] // 64
+                if inv["harps"] - max_craft * 64 < 5000:
+                    max_craft = (inv["harps"] - 5000) // 64
+                craft = min(inv["lbean"] // 16, max_craft)
+                if craft > 0:
+                    made = craft * 2
+                    inv["llavi"] += made
+                    inv["harps"] -= craft * 64
+                    inv["lbean"] -= craft * 16
+            # Update egg count
             if "geggs" in loot:
                 egg_count += int(loot["geggs"])
-        chain.append({"stage": stage, "eggs": egg_count, **{keys: int(vals) for keys, vals in loot.items()}, "inv": inv.copy()})
+        chain.append({"stage": stage, "eggs": egg_count, "harps_spent": int(loot.get("harps_spent", 0)), **{keys: int(vals) for keys, vals in loot.items() if keys not in ("hunts", "harps_spent")}, "inv": inv.copy()})
 
     return chain
 
@@ -749,9 +766,15 @@ if __name__ == "__main__":
         print(chain[0]["error"])
         exit(1)
     print(f"Planned chain to reach {goal} eggs:")
-    for i, step in enumerate(chain, start=1):
-        eggs = step.get("geggs", 0)
-        print(f"{i:3} - {step['stage']:25} | Eggs: {eggs}")
-    print("========== Final Inventory ==========")
-    print(chain[-1]["inv"])
+    header = f"{'Stage':17} | {'royal':7} | {'llavi':7} | {'mbean':7} | {'lbean':7} | {'rbean':7} | {'harps':7} | {'geggs':7} | {'ferts':7}"
+    print(header)
+    print("-" * len(header))
+    for step in chain:
+        inv = step["inv"]
+        print(f"{step['stage']:17} | "
+            f"{inv.get('royal',0):7} | {inv.get('llavi',0):7} | "
+            f"{inv.get('mbean',0):7} | {inv.get('lbean',0):7} | {inv.get('rbean',0):7} | "
+            f"{inv.get('harps',0):7} | {inv.get('geggs',0):7} | {inv.get('ferts',0):7}")
+    #print("========== Final Inventory ==========")
+    #print(chain[-1]["inv"])
     
