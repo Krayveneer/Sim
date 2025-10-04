@@ -612,6 +612,9 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
     # Fert costs
     fert_costs = {"Dungeon": 1, "Ballroom": 12, "Great Hall": 100}
 
+    # Stage count
+    stage_counts = {}
+
     # Loop until target eggs reached
     while egg_count < target_eggs:
         stage = None
@@ -746,8 +749,12 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
             # Update egg count
             if "geggs" in loot:
                 egg_count += int(loot["geggs"])
-        chain.append({"stage": stage, "eggs": egg_count, "harps_spent": int(loot.get("harps_spent", 0)), **{keys: int(vals) for keys, vals in loot.items() if keys not in ("hunts", "harps_spent")}, "inv": inv.copy()})
+        # Append stage counts
+        stage_counts[stage] = stage_counts.get(stage, 0) + 1
 
+        # Append result
+        chain.append({"stage": stage, "eggs": egg_count, "harps_spent": int(loot.get("harps_spent", 0)), **{keys: int(vals) for keys, vals in loot.items() if keys not in ("hunts", "harps_spent")}, "inv": inv.copy(), "summary": stage_counts})
+        
     return chain
 
 # Main
@@ -784,6 +791,10 @@ if __name__ == "__main__":
         print(chain[0]["error"])
         exit(1)
     print(f"Planned chain to reach {goal} eggs:")
+    if "summary" in chain[-1]:
+        for stage, count in chain[-1]["summary"].items():
+            print(f"{stage:17} : {count}")
+    print("========== Chain Breakdown ==========")
     header = f"{'Stage':17} | {'royal':7} | {'llavi':7} | {'mbean':7} | {'lbean':7} | {'rbean':7} | {'harps':7} | {'geggs':7} | {'ferts':7}"
     print(header)
     print("-" * len(header))

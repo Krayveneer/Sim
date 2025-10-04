@@ -28,9 +28,9 @@ Several assumptions have been made during the writing of this code:
     - Casually farm Royal Ruby Bean to fulfil this quota
 - A minimum of 250 Leaping Lavish Beanster must be in the inventory before using the simulator
     - Casually farm Lavish Lapis Bean and Golden Harps to fulfill this quota
-- A minimum of 15.000 Golden Harps must be in the inventory before using the simulator
+- A minimum of 5.000 Golden Harps must be in the inventory before using the simulator
     - Casually farm Golden Harps to fulfill this quote
-- The minimum amount of cheese and harps is required as a safety net to do farming runs for Golden Harps, Lapis Lavish Beans, and Royal Ruby Beans should no beans are inputted as an initial condition
+- The minimum amount of cheese and harps is required as a safety net to do farming runs for Golden Harps, Lapis Lavish Beans, and Royal Ruby Beans should no beans and/or fabled fertilizers are inputted as an initial condition
 - Leaping Lavish Beanster is used in any room that is not an Ultimate Target room
 - Room 1 Retreat (R1R) strategy: 
     - This is employed for purely Fabled Fertilizer farming
