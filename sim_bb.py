@@ -612,26 +612,89 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
     # Fert costs
     fert_costs = {"Dungeon": 1, "Ballroom": 12, "Great Hall": 100}
 
-    # Define threshold
-    threshold_harps = 10000
-    threshold_royal = 100
-    threshold_llavi = 75
-
-    # Pre-check for (leaping) lavish and royal beansters 
-    # This is important because then the logic would become a bit more complex without this boundary conditions
-    #if inv["llavi"] < threshold_llavi:
-    #    return [{"error": f"Need at least {threshold_llavi} (leaping) lavish beanster to start the chain."}]
-    #if inv["royal"] < threshold_royal:
-    #    return [{"error": f"Need at least {threshold_royal} royal beanster to start the chain."}]
-
     # Loop until target eggs reached
     while egg_count < target_eggs:
         stage = None
         loot = None
         fert_spent = 0
 
-        # Check if we have enough harp to do a farming run at any stage
-        if inv["harps"] < threshold_harps:
+        # Define threshold
+        threshold_harps = 15000
+        threshold_royal = 150
+        threshold_llavi = 250
+
+        # Threshold breakdown
+        # Royal beanster check
+        craftable_royal = min(inv["rbean"] // 128, inv["lbean"] // 64)
+        if craftable_royal > 0 and inv["royal"] < threshold_royal:
+            inv["royal"] += craftable_royal * 2
+            inv["rbean"] -= craftable_royal * 128
+            inv["lbean"] -= craftable_royal * 64
+        deficit_royal = max(threshold_royal - inv["royal"], 0)
+        deficit_royal_rbean = deficit_royal * 128
+        deficit_royal_lbean = deficit_royal * 64
+        # Leaping lavish beanster check
+        max_llavi_harps = max((inv["harps"] - threshold_harps) // 64, 0)
+        craftable_llavi = min(inv["lbean"] // 16, max_llavi_harps)
+        if craftable_llavi > 0 and inv["llavi"] < threshold_llavi:
+            inv["llavi"] += craftable_llavi * 2
+            inv["harps"] -= craftable_llavi * 64
+            inv["lbean"] -= craftable_llavi * 16
+        deficit_llavi = max(threshold_llavi - inv["llavi"], 0)
+        deficit_llavi_harps = deficit_llavi * 64
+        deficit_llavi_lbean = deficit_llavi * 16
+
+        # Farming run logic
+        # Check for royal beanster deficit
+        if inv["rbean"] < deficit_royal_rbean or inv["lbean"] < deficit_royal_lbean:
+            if inv["rbean"] < deficit_royal_rbean:
+                if inv["ferts"] < fert_costs["Dungeon"]:
+                    stage = "Beanstalk"
+                    loot = avg_beanstalk
+                    fert_spent = 0
+                elif inv["ferts"] < fert_costs["Ballroom"]:
+                    stage = "Dungeon (R1R)"
+                    loot = avg_r1r_dungeon
+                    fert_spent = fert_costs["Dungeon"]
+                else:
+                    stage = "Ballroom (Royal)"
+                    loot = avg_rbean_farm
+                    fert_spent = fert_costs["Ballroom"]
+            else:
+                if inv["ferts"] < fert_costs["Dungeon"]:
+                    stage = "Beanstalk"
+                    loot = avg_beanstalk
+                    fert_spent = 0
+                else:
+                    stage = "Dungeon (Lapis)"
+                    loot = avg_lbean_farm
+                    fert_spent = fert_costs["Dungeon"]
+        # Check for leaping lavish beanster deficit
+        elif inv["harps"] < deficit_llavi_harps or inv["lbean"] < deficit_llavi_lbean:
+            if inv["harps"] < deficit_llavi_harps:
+                if inv["ferts"] < fert_costs["Dungeon"]:
+                    stage = "Beanstalk"
+                    loot = avg_beanstalk
+                    fert_spent = 0
+                elif inv["ferts"] < fert_costs["Ballroom"]:
+                    stage = "Dungeon (R1R)"
+                    loot = avg_r1r_dungeon
+                    fert_spent = fert_costs["Dungeon"]
+                else:
+                    stage = "Ballroom (Harps)"
+                    loot = avg_harps_farm
+                    fert_spent = fert_costs["Ballroom"]
+            else:
+                if inv["ferts"] < fert_costs["Dungeon"]:
+                    stage = "Beanstalk"
+                    loot = avg_beanstalk
+                    fert_spent = 0
+                else:
+                    stage = "Dungeon (Lapis)"
+                    loot = avg_lbean_farm
+                    fert_spent = fert_costs["Dungeon"]
+        # Check for harps
+        elif inv["harps"] < threshold_harps:
             if inv["ferts"] < fert_costs["Dungeon"]:
                 stage = "Beanstalk"
                 loot = avg_beanstalk
@@ -644,33 +707,6 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
                 stage = "Ballroom (Harps)"
                 loot = avg_harps_farm
                 fert_spent = fert_costs["Ballroom"]
-
-        # Check if we have enough royal cheese to do a farming run at any stage
-        elif inv["royal"] < threshold_royal:
-            if inv["ferts"] < fert_costs["Dungeon"]:
-                stage = "Beanstalk"
-                loot = avg_beanstalk
-                fert_spent = 0
-            elif inv["ferts"] < fert_costs["Ballroom"]:
-                stage = "Dungeon (R1R)"
-                loot = avg_r1r_dungeon
-                fert_spent = fert_costs["Dungeon"]
-            else:
-                stage = "Ballroom (Royal)"
-                loot = avg_rbean_farm
-                fert_spent = fert_costs["Ballroom"]
-
-        # Check if we have enough (leaping) lavish cheese to do a farming run at any stage
-        elif inv["llavi"] < threshold_llavi:
-            if inv["ferts"] < fert_costs["Dungeon"]:
-                stage = "Beanstalk"
-                loot = avg_beanstalk
-                fert_spent = 0
-            else:
-                stage = "Dungeon (Lapis)"
-                loot = avg_lbean_farm
-                fert_spent = fert_costs["Dungeon"]
-
         # If we have enough resources, go to Greathall
         else:
             if inv["ferts"] < fert_costs["Dungeon"]:
@@ -707,24 +743,6 @@ def plan_chain(trap_power: int, trap_luck: int, use_ref: bool, target_eggs: int,
             for keys, vals in loot.items():
                 if keys not in consumed and keys != "harps_spent" and keys != "hunts":
                     inv[keys] = inv.get(keys, 0) + int(vals)
-            # Craft cheese
-            if stage == "Ballroom (Royal)":
-                craft = min(inv["rbean"] // 128, inv["lbean"] // 64)
-                made = craft * 2
-                inv["royal"] += made
-                inv["rbean"] -= craft * 128
-                inv["lbean"] -= craft * 64
-            if stage == "Dungeon (Lapis)":
-                # Reserve some harps for next run
-                max_craft = inv["harps"] // 64
-                if inv["harps"] - max_craft * 64 < 5000:
-                    max_craft = (inv["harps"] - 5000) // 64
-                craft = min(inv["lbean"] // 16, max_craft)
-                if craft > 0:
-                    made = craft * 2
-                    inv["llavi"] += made
-                    inv["harps"] -= craft * 64
-                    inv["lbean"] -= craft * 16
             # Update egg count
             if "geggs" in loot:
                 egg_count += int(loot["geggs"])

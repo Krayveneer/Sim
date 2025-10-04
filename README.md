@@ -24,11 +24,13 @@
 ## Assumptions
 
 Several assumptions have been made during the writing of this code:
-- A minimum of 200 Royal Beanster must be in the inventory before using the simulator
+- A minimum of 150 Royal Beanster must be in the inventory before using the simulator
     - Casually farm Royal Ruby Bean to fulfil this quota
-- A minimum of 100 Leaping Lavish Beanster must be in the inventory before using the simulator
+- A minimum of 250 Leaping Lavish Beanster must be in the inventory before using the simulator
     - Casually farm Lavish Lapis Bean and Golden Harps to fulfill this quota
-- The minimum amount of cheese is required as to prevent infinite loop where the chain tries to balance and optimize farming runs of three different resources back to back at the same time
+- A minimum of 15.000 Golden Harps must be in the inventory before using the simulator
+    - Casually farm Golden Harps to fulfill this quote
+- The minimum amount of cheese and harps is required as a safety net to do farming runs for Golden Harps, Lapis Lavish Beans, and Royal Ruby Beans should no beans are inputted as an initial condition
 - Leaping Lavish Beanster is used in any room that is not an Ultimate Target room
 - Room 1 Retreat (R1R) strategy: 
     - This is employed for purely Fabled Fertilizer farming
@@ -44,9 +46,9 @@ Several assumptions have been made during the writing of this code:
     - Always check that Royal Beanster is always more than 100, and do Royal Ruby Bean farming run if found lacking
     - Always check that Leaping Lavish Beanster is always more than 75, and do Lavish Lapis Bean and Golden Harp farming runs if found lacking
 - Cheese logic check:
-    - Always spare 5.000 Golden Harps in reserve when crafting Leaping Lavish Beanster to sustain subsequent stage run
-    - Always craft Leaping Lavish Beanster when it is below 75
-    - Always craft Royal Beanster when it is below 100
+    - Always spare 15.000 Golden Harps in reserve when crafting Leaping Lavish Beanster to sustain subsequent stage run
+    - Always craft Leaping Lavish Beanster when it is below 250
+    - Always craft Royal Beanster when it is below 150
 - Beanster cheeses are assumed to have been bought in the marketplace, or in stock in abundance
 
 ## Features
