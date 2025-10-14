@@ -42,9 +42,9 @@ Several assumptions have been made during the writing of this code:
     - This utilizes Royal Beanster and Condensed Creativity upon reaching Ultimate Target room
 - Stage logic check:
     - Always check for Fabled Fertilizer to enter a particular stage, and do R1R at the stage below it if found lacking
-    - Always check that Golden Harps is always more than 10.000, and do Golden Harps farming run if found lacking
-    - Always check that Royal Beanster is always more than 100, and do Royal Ruby Bean farming run if found lacking
-    - Always check that Leaping Lavish Beanster is always more than 75, and do Lavish Lapis Bean and Golden Harp farming runs if found lacking
+    - Always check that Golden Harps is always more than 15.000, and do Golden Harps farming run if found lacking
+    - Always check that Royal Beanster is always more than 150, and do Royal Ruby Bean farming run if found lacking
+    - Always check that Leaping Lavish Beanster is always more than 250, and do Lavish Lapis Bean and Golden Harp farming runs if found lacking
 - Cheese logic check:
     - Always spare 15.000 Golden Harps in reserve when crafting Leaping Lavish Beanster to sustain subsequent stage run
     - Always craft Leaping Lavish Beanster when it is below 250
